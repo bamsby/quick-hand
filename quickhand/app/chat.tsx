@@ -4,8 +4,17 @@ import { View, Text, TextInput, Pressable, StyleSheet, ScrollView, Linking, Acti
 import { ROLE_PRESETS, type RoleKey } from "../lib/roles";
 import { runAgent, notionCreatePage, gmailCreateDraft } from "../lib/api";
 import type { Message, ActionPlan } from "../lib/types";
+import { ToastProvider, useToast } from "../lib/ui/toast";
+import { NotionConfirmModal } from "../lib/ui/notion-confirm-modal";
+import { GmailConfirmModal } from "../lib/ui/gmail-confirm-modal";
 
-export default function Chat() {
+interface PendingAction {
+  messageId: string;
+  actionId: string;
+  action: ActionPlan;
+}
+
+function ChatContent() {
   const { role = "general" } = useLocalSearchParams<{ role?: RoleKey }>();
   const preset = ROLE_PRESETS[role as RoleKey] ?? ROLE_PRESETS.general;
   const [input, setInput] = useState("");
@@ -14,6 +23,12 @@ export default function Chat() {
   ]);
   const [loading, setLoading] = useState(false);
   const scrollRef = useRef<ScrollView>(null);
+  const { showToast } = useToast();
+
+  // Modal states
+  const [notionModalVisible, setNotionModalVisible] = useState(false);
+  const [gmailModalVisible, setGmailModalVisible] = useState(false);
+  const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
 
   useEffect(() => {
     scrollRef.current?.scrollToEnd({ animated: true });
@@ -33,7 +48,28 @@ export default function Chat() {
     }
   };
 
-  const executeAction = async (messageId: string, actionId: string) => {
+  const executeAction = (messageId: string, actionId: string) => {
+    const message = messages.find((m) => m.id === messageId);
+    const action = message?.plan?.find((p) => p.id === actionId);
+    
+    if (!action) return;
+
+    // Show confirmation modal based on action type
+    setPendingAction({ messageId, actionId, action });
+    
+    if (action.action === "notion") {
+      setNotionModalVisible(true);
+    } else if (action.action === "gmail") {
+      setGmailModalVisible(true);
+    }
+  };
+
+  const confirmNotionAction = async (title: string) => {
+    if (!pendingAction) return;
+    
+    setNotionModalVisible(false);
+    const { messageId, actionId, action } = pendingAction;
+
     // Update action status to running
     setMessages((msgs) =>
       msgs.map((msg) => {
@@ -50,26 +86,10 @@ export default function Chat() {
     );
 
     try {
-      const message = messages.find((m) => m.id === messageId);
-      const action = message?.plan?.find((p) => p.id === actionId);
-      
-      if (!action) throw new Error("Action not found");
-
-      let result = "";
-      if (action.action === "notion") {
-        const { pageUrl } = await notionCreatePage(
-          action.params?.title || "Untitled",
-          action.params?.content || ""
-        );
-        result = pageUrl;
-      } else if (action.action === "gmail") {
-        const { threadUrl } = await gmailCreateDraft(
-          action.params?.to || "",
-          action.params?.subject || "",
-          action.params?.body || ""
-        );
-        result = threadUrl;
-      }
+      const { pageUrl } = await notionCreatePage(
+        title,
+        action.params?.content || ""
+      );
 
       // Update action status to done
       setMessages((msgs) =>
@@ -78,15 +98,18 @@ export default function Chat() {
             return {
               ...msg,
               plan: msg.plan.map((p) =>
-                p.id === actionId ? { ...p, status: "done" as const, result } : p
+                p.id === actionId ? { ...p, status: "done" as const, result: pageUrl } : p
               ),
             };
           }
           return msg;
         })
       );
+
+      showToast("Page created!", "success", pageUrl, "Open");
     } catch (error) {
-      console.error("Action execution error:", error);
+      console.error("Notion action error:", error);
+      
       // Update action status to error
       setMessages((msgs) =>
         msgs.map((msg) => {
@@ -101,6 +124,78 @@ export default function Chat() {
           return msg;
         })
       );
+
+      showToast("Couldn't create Notion page. Check connection and try again.", "error");
+    } finally {
+      setPendingAction(null);
+    }
+  };
+
+  const confirmGmailAction = async (recipients: string) => {
+    if (!pendingAction) return;
+    
+    setGmailModalVisible(false);
+    const { messageId, actionId, action } = pendingAction;
+
+    // Update action status to running
+    setMessages((msgs) =>
+      msgs.map((msg) => {
+        if (msg.id === messageId && msg.plan) {
+          return {
+            ...msg,
+            plan: msg.plan.map((p) =>
+              p.id === actionId ? { ...p, status: "running" as const } : p
+            ),
+          };
+        }
+        return msg;
+      })
+    );
+
+    try {
+      const { threadUrl } = await gmailCreateDraft(
+        recipients,
+        action.params?.subject || "",
+        action.params?.body || ""
+      );
+
+      // Update action status to done
+      setMessages((msgs) =>
+        msgs.map((msg) => {
+          if (msg.id === messageId && msg.plan) {
+            return {
+              ...msg,
+              plan: msg.plan.map((p) =>
+                p.id === actionId ? { ...p, status: "done" as const, result: threadUrl } : p
+              ),
+            };
+          }
+          return msg;
+        })
+      );
+
+      showToast("Draft ready!", "success", threadUrl, "Open");
+    } catch (error) {
+      console.error("Gmail action error:", error);
+      
+      // Update action status to error
+      setMessages((msgs) =>
+        msgs.map((msg) => {
+          if (msg.id === messageId && msg.plan) {
+            return {
+              ...msg,
+              plan: msg.plan.map((p) =>
+                p.id === actionId ? { ...p, status: "error" as const } : p
+              ),
+            };
+          }
+          return msg;
+        })
+      );
+
+      showToast("Couldn't create draft. Check connection and try again.", "error");
+    } finally {
+      setPendingAction(null);
     }
   };
 
@@ -203,10 +298,42 @@ export default function Chat() {
             <Text style={{ color:"white" }}>Send</Text>
           </Pressable>
         </View>
+
+        {/* Confirmation Modals */}
+        <NotionConfirmModal
+          visible={notionModalVisible}
+          onClose={() => {
+            setNotionModalVisible(false);
+            setPendingAction(null);
+          }}
+          onConfirm={confirmNotionAction}
+          initialTitle={pendingAction?.action.params?.title || "Untitled"}
+          content={pendingAction?.action.params?.content || ""}
+        />
+
+        <GmailConfirmModal
+          visible={gmailModalVisible}
+          onClose={() => {
+            setGmailModalVisible(false);
+            setPendingAction(null);
+          }}
+          onConfirm={confirmGmailAction}
+          initialRecipients={pendingAction?.action.params?.to || "your.email@example.com"}
+          subject={pendingAction?.action.params?.subject || ""}
+        />
       </View>
     </KeyboardAvoidingView>
   );
 }
+
+export default function Chat() {
+  return (
+    <ToastProvider>
+      <ChatContent />
+    </ToastProvider>
+  );
+}
+
 const styles = StyleSheet.create({
   header:{ padding:16, borderBottomWidth:1, borderColor:"#eee" },
   title:{ fontSize:18, fontWeight:"600" },
