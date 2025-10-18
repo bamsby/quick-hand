@@ -195,32 +195,58 @@ async function searchExa(query: string, exaApiKey: string, limit: number): Promi
   }
 }
 
-// Helper: Call OpenAI Chat Completions
-async function callOpenAI(
-  messages: Array<{ role: string; content: string }>,
-  openAiKey: string
+// Helper: Call Gemini 2.5 Pro
+async function callGemini(
+  prompt: string,
+  geminiApiKey: string
 ): Promise<string> {
-  const response = await fetch("https://api.openai.com/v1/chat/completions", {
+  const response = await fetch(
+    "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:generateContent",
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-goog-api-key": geminiApiKey,
+      },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: {
+          temperature: 0.7,
+          maxOutputTokens: 1000,
+        },
+      }),
+    }
+  );
+
+  if (!response.ok) {
+    const error = await response.text();
+    throw new Error(`Gemini API error: ${error}`);
+  }
+
+  const data = await response.json();
+  return data.candidates?.[0]?.content?.parts?.[0]?.text || "No response generated.";
+}
+
+// Helper: Call classify-intent function
+async function classifyIntent(
+  query: string,
+  role: string,
+  supabaseUrl: string
+): Promise<{ intent: string; slots: { topic: string; needs: { location: boolean; email: boolean } } }> {
+  const response = await fetch(`${supabaseUrl}/functions/v1/classify-intent`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "Authorization": `Bearer ${openAiKey}`,
     },
-    body: JSON.stringify({
-      model: "gpt-4o-mini",
-      messages,
-      temperature: 0.7,
-      max_tokens: 1000,
-    }),
+    body: JSON.stringify({ query, role }),
   });
 
   if (!response.ok) {
     const error = await response.text();
-    throw new Error(`OpenAI API error: ${error}`);
+    throw new Error(`Intent classification error: ${error}`);
   }
 
-  const data = await response.json();
-  return data.choices[0]?.message?.content || "No response generated.";
+  return await response.json();
 }
 
 // Helper: Generate a concise title for Notion using OpenAI
@@ -367,11 +393,21 @@ serve(async (req) => {
   try {
     // Get environment variables
     const openAiKey = Deno.env.get("OPENAI_API_KEY");
+    const geminiApiKey = Deno.env.get("GEMINI_API_KEY");
     const exaApiKey = Deno.env.get("EXA_API_KEY");
     const mem0ApiKey = Deno.env.get("MEM0_API_KEY");
+    const supabaseUrl = Deno.env.get("SUPABASE_URL");
 
     if (!openAiKey) {
       throw new Error("OPENAI_API_KEY not set in Supabase secrets");
+    }
+
+    if (!geminiApiKey) {
+      throw new Error("GEMINI_API_KEY not set in Supabase secrets");
+    }
+
+    if (!supabaseUrl) {
+      throw new Error("SUPABASE_URL not set in Supabase secrets");
     }
 
     // Get user from JWT for memory
@@ -416,6 +452,25 @@ serve(async (req) => {
     }
 
     const userQuery = lastUserMessage.content;
+    
+    // Classify intent first
+    let intentResult;
+    try {
+      intentResult = await classifyIntent(userQuery, role, supabaseUrl);
+      console.log("Intent classification:", {
+        intent: intentResult.intent,
+        topic: intentResult.slots.topic,
+        needs: intentResult.slots.needs,
+      });
+    } catch (error) {
+      console.error("Intent classification failed:", error);
+      // Fallback to default behavior if classification fails
+      intentResult = {
+        intent: "info_lookup",
+        slots: { topic: userQuery, needs: { location: false, email: false } }
+      };
+    }
+    
     let citations: Citation[] | undefined;
     let contextPrompt = "";
     
@@ -435,21 +490,21 @@ serve(async (req) => {
       }
     }
     
-    // Check if this is an email drafting request
-    const lowerQuery = userQuery.toLowerCase();
-    const isEmailRequest = lowerQuery.includes("email") || lowerQuery.includes("draft") || lowerQuery.includes("gmail") || lowerQuery.includes("send");
-
-    // Check if web search is needed (but skip for email drafting)
-    if (exaApiKey && needsWebSearch(userQuery) && !isEmailRequest) {
+    // Optimize web search based on intent
+    const shouldSearch = intentResult.intent === "info_lookup" || 
+                     (intentResult.intent === "summarize" && exaApiKey);
+    
+    // Skip web search for chitchat and email_draft
+    if (exaApiKey && shouldSearch && intentResult.intent !== "chitchat" && intentResult.intent !== "email_draft") {
       console.log("Performing web search for:", userQuery);
       const citationLimit = getCitationLimit(userQuery);
       console.log(`Citation limit for this query: ${citationLimit}`);
       
-      // Extract main topic BEFORE searching to avoid biased results
-      const mainTopic = extractMainTopic(userQuery);
-      console.log(`Cleaned search topic: "${mainTopic}"`);
+      // Use intent topic or extract from query
+      const mainTopic = intentResult.slots.topic || extractMainTopic(userQuery);
+      console.log(`Search topic: "${mainTopic}"`);
       
-      // Use cleaned topic for search to avoid context bias
+      // Use topic for search
       citations = await searchExa(mainTopic, exaApiKey, citationLimit);
       
       if (citations.length > 0) {
@@ -472,28 +527,45 @@ serve(async (req) => {
     // For email requests, we want the LLM to provide a summary, not write the email directly
     // The email content will be generated separately for the modal preview
 
-    // Prepare messages for OpenAI
-    const openAiMessages = history
-      .filter(m => m.role !== "system" || m.id === "sys") // Keep only the first system message
-      .map(m => ({
-        role: m.role,
-        content: m.role === "system" && (contextPrompt || memoryContext)
-          ? m.content + contextPrompt + memoryContext
-          : m.content,
-      }));
+    // Prepare prompt for Gemini
+    const systemMessage = history.find(m => m.role === "system" && m.id === "sys");
+    const userMessages = history.filter(m => m.role === "user");
+    const assistantMessages = history.filter(m => m.role === "assistant");
+    
+    // Build conversation context for Gemini
+    let conversationContext = "";
+    if (systemMessage) {
+      conversationContext += systemMessage.content;
+      if (contextPrompt || memoryContext) {
+        conversationContext += contextPrompt + memoryContext;
+      }
+      conversationContext += "\n\n";
+    }
+    
+    // Add conversation history
+    for (let i = 0; i < Math.max(userMessages.length, assistantMessages.length); i++) {
+      if (userMessages[i]) {
+        conversationContext += `User: ${userMessages[i].content}\n`;
+      }
+      if (assistantMessages[i]) {
+        conversationContext += `Assistant: ${assistantMessages[i].content}\n`;
+      }
+    }
+    
+    // Add current user message
+    conversationContext += `User: ${userQuery}\nAssistant:`;
 
-    // Call OpenAI
-    const assistantReply = await callOpenAI(openAiMessages, openAiKey);
+    // Call Gemini
+    const assistantReply = await callGemini(conversationContext, geminiApiKey);
 
-    // Detect if we should suggest actions
+    // Detect if we should suggest actions based on intent
     let plan: ActionPlan[] | undefined;
-    const lowerReply = assistantReply.toLowerCase();
-
-    // Enhanced heuristics for action suggestions - can detect MULTIPLE actions
     const actions: ActionPlan[] = [];
     
-    // Check for Notion action
-    if (lowerQuery.includes("save") || lowerQuery.includes("notion")) {
+    // Check for Notion action based on intent or keywords
+    if (intentResult.intent === "action_request" || 
+        userQuery.toLowerCase().includes("save") || 
+        userQuery.toLowerCase().includes("notion")) {
       // Auto-generate title using OpenAI
       const generatedTitle = await generateTitle(assistantReply, openAiKey);
       
@@ -509,8 +581,12 @@ serve(async (req) => {
       });
     }
     
-    // Check for Gmail action (independent check, not else-if)
-    if (isEmailRequest) {
+    // Check for Gmail action based on intent
+    if (intentResult.intent === "email_draft" || 
+        userQuery.toLowerCase().includes("email") || 
+        userQuery.toLowerCase().includes("draft") || 
+        userQuery.toLowerCase().includes("gmail") || 
+        userQuery.toLowerCase().includes("send")) {
       // Generate email content specifically for the email draft
       const emailContent = await generateEmailContent(userQuery, assistantReply, openAiKey);
       

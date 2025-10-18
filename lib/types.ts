@@ -23,6 +23,10 @@ export type Message = {
   content: string;
   citations?: Citation[];
   plan?: ActionPlan[];
+  metadata?: {
+    intent?: string;
+    topic?: string;
+  };
 };
 
 export type PlanStep = { id:string; title:string; status:"pending"|"running"|"done"|"error"; };
