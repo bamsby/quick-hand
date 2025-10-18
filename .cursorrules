@@ -90,6 +90,59 @@ Build a **mobile-first, role-aware AI agent** that helps non-technical users com
 
 ---
 
+## Supabase MCP Integration (ALWAYS USE THIS)
+**Critical Rule:** ALWAYS use Supabase MCP tools for ALL database and edge function operations. Never use terminal commands like `npx supabase` or `psql`.
+
+### Available MCP Tools:
+- **Database Operations:**
+  - `mcp_supabase_list_tables` - List all tables in schemas
+  - `mcp_supabase_execute_sql` - Run SQL queries (SELECT, INSERT, UPDATE, DELETE)
+  - `mcp_supabase_apply_migration` - Apply DDL migrations (CREATE, ALTER, DROP)
+  - `mcp_supabase_list_migrations` - List all migrations
+  - `mcp_supabase_list_extensions` - List database extensions
+
+- **Edge Functions:**
+  - `mcp_supabase_deploy_edge_function` - Deploy edge functions (ALWAYS USE THIS)
+  - `mcp_supabase_list_edge_functions` - List all edge functions
+  - `mcp_supabase_get_edge_function` - Get edge function code
+
+- **Development Branches:**
+  - `mcp_supabase_create_branch` - Create development branch
+  - `mcp_supabase_list_branches` - List all branches
+  - `mcp_supabase_merge_branch` - Merge branch to production
+  - `mcp_supabase_delete_branch` - Delete a branch
+  - `mcp_supabase_reset_branch` - Reset branch to migration
+  - `mcp_supabase_rebase_branch` - Rebase branch on production
+
+- **Project Info:**
+  - `mcp_supabase_get_project_url` - Get API URL
+  - `mcp_supabase_get_anon_key` - Get anonymous key
+  - `mcp_supabase_generate_typescript_types` - Generate types
+  - `mcp_supabase_get_advisors` - Check security/performance issues
+  - `mcp_supabase_get_logs` - Get service logs
+
+### When to Use:
+- ✅ Deploying edge functions → use `mcp_supabase_deploy_edge_function`
+- ✅ Running queries → use `mcp_supabase_execute_sql`
+- ✅ Creating tables → use `mcp_supabase_apply_migration`
+- ✅ Checking logs → use `mcp_supabase_get_logs`
+- ❌ NEVER use terminal commands for Supabase operations
+
+### Example: Deploy Edge Function
+```typescript
+// Correct way (use this):
+mcp_supabase_deploy_edge_function({
+  name: "function-name",
+  entrypoint_path: "index.ts",
+  files: [{ name: "index.ts", content: "..." }]
+})
+
+// Wrong way (DON'T do this):
+// npx supabase functions deploy function-name
+```
+
+---
+
 ## Security & Environment Variables
 - Client only reads **EXPO_PUBLIC_*** values (non-sensitive, safe to bundle).
 - Secrets (LLM, Exa, MCP keys) are **server-side only** and never exposed to the app bundle.
@@ -216,6 +269,7 @@ When integrating, move API keys to backend and update these to call backend endp
 - **Respect existing architecture** - use react-query for async, zod for validation.
 - **Test instructions** - provide clear manual test steps for new features.
 - **Windows compatibility** - use cross-platform paths and PowerShell-friendly commands.
+- **ALWAYS use Supabase MCP** - for ALL database operations, edge function deployments, and migrations.
 
 ---
 

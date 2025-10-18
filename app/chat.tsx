@@ -112,7 +112,7 @@ function ChatContent() {
     }
   };
 
-  const confirmNotionAction = async (title: string) => {
+  const confirmNotionAction = async (title: string, parentPageId?: string) => {
     if (!pendingAction) return;
     
     setNotionModalVisible(false);
@@ -136,7 +136,9 @@ function ChatContent() {
     try {
       const { pageUrl } = await notionCreatePage(
         title,
-        action.params?.content || ""
+        action.params?.content || "",
+        action.params?.citations || [],
+        parentPageId
       );
 
       // Update action status to done
@@ -312,7 +314,8 @@ function ChatContent() {
         if (action.action === "notion") {
           const { pageUrl } = await notionCreatePage(
             action.params?.title || "Untitled",
-            action.params?.content || ""
+            action.params?.content || "",
+            action.params?.citations || []
           );
           result = pageUrl;
         } else if (action.action === "gmail") {
@@ -511,6 +514,7 @@ function ChatContent() {
           onConfirm={confirmNotionAction}
           initialTitle={pendingAction?.action.params?.title || "Untitled"}
           content={pendingAction?.action.params?.content || ""}
+          citations={pendingAction?.action.params?.citations || []}
         />
 
         <GmailConfirmModal

@@ -10,12 +10,54 @@ const corsHeaders = {
 interface RequestBody {
   title: string;
   content: string;
+  parentPageId?: string;
+  citations?: Array<{
+    id: number;
+    title: string;
+    url: string;
+    snippet: string;
+  }>;
 }
 
 interface NotionBlock {
   object: "block";
   type: string;
   [key: string]: any;
+}
+
+// Helper: Parse markdown bold (**text**) into Notion rich_text
+function parseRichText(text: string): Array<any> {
+  const richText: Array<any> = [];
+  const boldRegex = /\*\*(.+?)\*\*/g;
+  let lastIndex = 0;
+  let match;
+
+  while ((match = boldRegex.exec(text)) !== null) {
+    // Add text before bold
+    if (match.index > lastIndex) {
+      richText.push({
+        type: "text",
+        text: { content: text.substring(lastIndex, match.index) }
+      });
+    }
+    // Add bold text
+    richText.push({
+      type: "text",
+      text: { content: match[1] },
+      annotations: { bold: true }
+    });
+    lastIndex = match.index + match[0].length;
+  }
+
+  // Add remaining text
+  if (lastIndex < text.length) {
+    richText.push({
+      type: "text",
+      text: { content: text.substring(lastIndex) }
+    });
+  }
+
+  return richText.length > 0 ? richText : [{ type: "text", text: { content: text } }];
 }
 
 // Helper: Convert markdown-like content to Notion blocks
@@ -32,7 +74,7 @@ function contentToNotionBlocks(content: string): NotionBlock[] {
         object: "block",
         type: "heading_1",
         heading_1: {
-          rich_text: [{ type: "text", text: { content: para.substring(2) } }],
+          rich_text: parseRichText(para.substring(2)),
         },
       });
     } else if (para.startsWith("## ")) {
@@ -40,7 +82,7 @@ function contentToNotionBlocks(content: string): NotionBlock[] {
         object: "block",
         type: "heading_2",
         heading_2: {
-          rich_text: [{ type: "text", text: { content: para.substring(3) } }],
+          rich_text: parseRichText(para.substring(3)),
         },
       });
     } else if (para.startsWith("### ")) {
@@ -48,16 +90,16 @@ function contentToNotionBlocks(content: string): NotionBlock[] {
         object: "block",
         type: "heading_3",
         heading_3: {
-          rich_text: [{ type: "text", text: { content: para.substring(4) } }],
+          rich_text: parseRichText(para.substring(4)),
         },
       });
     } else {
-      // Regular paragraph
+      // Regular paragraph - parse rich text for bold formatting
       blocks.push({
         object: "block",
         type: "paragraph",
         paragraph: {
-          rich_text: [{ type: "text", text: { content: para } }],
+          rich_text: parseRichText(para),
         },
       });
     }
@@ -120,7 +162,7 @@ serve(async (req) => {
 
     // Parse request body
     const body: RequestBody = await req.json();
-    const { title, content } = body;
+    const { title, content, parentPageId, citations } = body;
 
     if (!title) {
       return new Response(
@@ -129,33 +171,20 @@ serve(async (req) => {
       );
     }
 
-    console.log("Creating Notion page:", title);
+    console.log("Creating Notion page:", title, "Parent:", parentPageId || "workspace root");
+
+    // Format content with citations appended
+    let fullContent = content || "";
+    if (citations && citations.length > 0) {
+      fullContent += "\n\n## Sources\n\n";
+      citations.forEach((citation) => {
+        fullContent += `**[${citation.id}] ${citation.title}**\n`;
+        fullContent += `${citation.url}\n\n`;
+      });
+    }
 
     // Convert content to Notion blocks
-    const blocks = contentToNotionBlocks(content || "");
-
-    // First, search for a page to use as parent (find user's top-level pages)
-    const searchResponse = await fetch("https://api.notion.com/v1/search", {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${integration.access_token}`,
-        "Content-Type": "application/json",
-        "Notion-Version": "2022-06-28",
-      },
-      body: JSON.stringify({
-        filter: { property: "object", value: "page" },
-        page_size: 1,
-      }),
-    });
-
-    let parentId = null;
-    if (searchResponse.ok) {
-      const searchData = await searchResponse.json();
-      if (searchData.results && searchData.results.length > 0) {
-        parentId = searchData.results[0].id;
-        console.log("Found parent page:", parentId);
-      }
-    }
+    const blocks = contentToNotionBlocks(fullContent);
 
     // Prepare the page creation payload
     const pagePayload: any = {
@@ -167,12 +196,31 @@ serve(async (req) => {
       children: blocks.slice(0, 100), // Notion API has a limit of 100 blocks per request
     };
 
-    // Set parent - use found page or create as standalone
-    if (parentId) {
-      pagePayload.parent = { page_id: parentId };
+    // Set parent - use provided parent page ID or workspace root
+    if (parentPageId) {
+      pagePayload.parent = { page_id: parentPageId };
     } else {
-      // Create as a standalone page in the workspace
-      pagePayload.parent = { type: "page_id", page_id: null };
+      // If no parent specified, search for a default parent
+      const searchResponse = await fetch("https://api.notion.com/v1/search", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${integration.access_token}`,
+          "Content-Type": "application/json",
+          "Notion-Version": "2022-06-28",
+        },
+        body: JSON.stringify({
+          filter: { property: "object", value: "page" },
+          page_size: 1,
+        }),
+      });
+
+      if (searchResponse.ok) {
+        const searchData = await searchResponse.json();
+        if (searchData.results && searchData.results.length > 0) {
+          pagePayload.parent = { page_id: searchData.results[0].id };
+          console.log("Using default parent page:", searchData.results[0].id);
+        }
+      }
     }
 
     // Create page in Notion

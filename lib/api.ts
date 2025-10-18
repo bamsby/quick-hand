@@ -71,13 +71,40 @@ export async function checkNotionConnection(): Promise<IntegrationStatus> {
   }
 }
 
-export async function notionCreatePage(title: string, contentMD: string) {
+export async function notionListPages() {
+  try {
+    const { data, error } = await supabase.functions.invoke<{
+      pages: Array<{ id: string; title: string; url: string }>;
+    }>("notion-list-pages");
+
+    if (error) {
+      console.error("Notion list pages error:", error);
+      throw new Error(error.message || "Failed to fetch Notion pages");
+    }
+
+    if (!data) {
+      throw new Error("No data received from server");
+    }
+
+    return data.pages;
+  } catch (error) {
+    console.error("notionListPages error:", error);
+    throw error;
+  }
+}
+
+export async function notionCreatePage(
+  title: string, 
+  contentMD: string, 
+  citations?: Citation[],
+  parentPageId?: string
+) {
   try {
     const { data, error } = await supabase.functions.invoke<{
       pageUrl: string;
       pageId: string;
     }>("notion-create-page", {
-      body: { title, content: contentMD },
+      body: { title, content: contentMD, citations, parentPageId },
     });
 
     if (error) {
