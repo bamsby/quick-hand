@@ -27,3 +27,11 @@ export type Message = {
 
 export type PlanStep = { id:string; title:string; status:"pending"|"running"|"done"|"error"; };
 
+export type IntegrationStatus = {
+  connected: boolean;
+  workspaceName?: string;
+  workspaceId?: string;
+};
+
+export type IntegrationType = "notion" | "gmail";
+

@@ -2,12 +2,14 @@ import { useLocalSearchParams } from "expo-router";
 import { useState, useRef, useEffect } from "react";
 import { View, Text, TextInput, Pressable, StyleSheet, ScrollView, Linking, ActivityIndicator, KeyboardAvoidingView, Platform } from "react-native";
 import { ROLE_PRESETS, type RoleKey } from "../lib/roles";
-import { runAgent, notionCreatePage, gmailCreateDraft } from "../lib/api";
-import type { Message, ActionPlan } from "../lib/types";
+import { runAgent, notionCreatePage, gmailCreateDraft, checkNotionConnection } from "../lib/api";
+import type { Message, ActionPlan, IntegrationStatus } from "../lib/types";
 import { ToastProvider, useToast } from "../lib/ui/toast";
 import { NotionConfirmModal } from "../lib/ui/notion-confirm-modal";
+import { NotionConnectModal } from "../lib/ui/notion-connect-modal";
 import { GmailConfirmModal } from "../lib/ui/gmail-confirm-modal";
 import { CheckpointModal } from "../lib/ui/checkpoint-modal";
+import { initiateNotionOAuth } from "../lib/notion-oauth";
 
 interface PendingAction {
   messageId: string;
@@ -28,6 +30,7 @@ function ChatContent() {
 
   // Modal states
   const [notionModalVisible, setNotionModalVisible] = useState(false);
+  const [notionConnectModalVisible, setNotionConnectModalVisible] = useState(false);
   const [gmailModalVisible, setGmailModalVisible] = useState(false);
   const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
   
@@ -35,6 +38,9 @@ function ChatContent() {
   const [checkpointModalVisible, setCheckpointModalVisible] = useState(false);
   const [checkpointMessageId, setCheckpointMessageId] = useState<string | null>(null);
   const [actionsUnlocked, setActionsUnlocked] = useState<Set<string>>(new Set());
+
+  // Integration status
+  const [notionConnectionStatus, setNotionConnectionStatus] = useState<IntegrationStatus | null>(null);
 
   useEffect(() => {
     scrollRef.current?.scrollToEnd({ animated: true });
@@ -54,19 +60,55 @@ function ChatContent() {
     }
   };
 
-  const executeAction = (messageId: string, actionId: string) => {
+  const executeAction = async (messageId: string, actionId: string) => {
     const message = messages.find((m) => m.id === messageId);
     const action = message?.plan?.find((p) => p.id === actionId);
     
     if (!action) return;
 
-    // Show confirmation modal based on action type
+    // Set pending action
     setPendingAction({ messageId, actionId, action });
-    
+
+    // For Notion actions, check connection first
     if (action.action === "notion") {
-      setNotionModalVisible(true);
+      const status = await checkNotionConnection();
+      setNotionConnectionStatus(status);
+      
+      if (!status.connected) {
+        // Show connection modal
+        setNotionConnectModalVisible(true);
+      } else {
+        // Already connected, show confirm modal
+        setNotionModalVisible(true);
+      }
     } else if (action.action === "gmail") {
       setGmailModalVisible(true);
+    }
+  };
+
+  const handleNotionConnect = async () => {
+    const result = await initiateNotionOAuth();
+    
+    if (result.success) {
+      setNotionConnectModalVisible(false);
+      setNotionConnectionStatus({
+        connected: true,
+        workspaceName: result.workspaceName,
+      });
+      showToast(
+        `Connected to ${result.workspaceName || "Notion"}!`,
+        "success"
+      );
+      
+      // After successful connection, show the confirm modal
+      if (pendingAction) {
+        setNotionModalVisible(true);
+      }
+    } else {
+      showToast(
+        result.error || "Failed to connect to Notion. Please try again.",
+        "error"
+      );
     }
   };
 
@@ -231,6 +273,16 @@ function ChatContent() {
 
     const message = messages.find((m) => m.id === messageId);
     if (!message || !message.plan) return;
+
+    // Check if any Notion actions need connection
+    const hasNotionActions = editedActions.some((a) => a.action === "notion" && a.status === "pending");
+    if (hasNotionActions) {
+      const status = await checkNotionConnection();
+      if (!status.connected) {
+        showToast("Please connect Notion first to save content.", "error");
+        return;
+      }
+    }
 
     // Use edited actions from the modal
     const pendingActions = editedActions.filter((a) => a.status === "pending");
@@ -441,6 +493,15 @@ function ChatContent() {
         </View>
 
         {/* Confirmation Modals */}
+        <NotionConnectModal
+          visible={notionConnectModalVisible}
+          onClose={() => {
+            setNotionConnectModalVisible(false);
+            setPendingAction(null);
+          }}
+          onConnect={handleNotionConnect}
+        />
+
         <NotionConfirmModal
           visible={notionModalVisible}
           onClose={() => {

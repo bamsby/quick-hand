@@ -1,4 +1,4 @@
-import type { Message, Citation, ActionPlan } from "./types";
+import type { Message, Citation, ActionPlan, IntegrationStatus } from "./types";
 import type { RoleKey } from "./roles";
 import { supabase } from "./supabase";
 
@@ -53,9 +53,47 @@ export async function exaSearch(query:string) {
   return [{ title:"Mock Result", url:"https://example.com", snippet:"This is a placeholder." }];
 }
 
-export async function notionCreatePage(title:string, contentMD:string) {
-  // TODO: call Smithery MCP for Notion. Return mocked link.
-  return { pageUrl: "https://notion.so/mock-page" };
+export async function checkNotionConnection(): Promise<IntegrationStatus> {
+  try {
+    const { data, error } = await supabase.functions.invoke<IntegrationStatus>(
+      "notion-auth-status"
+    );
+
+    if (error) {
+      console.error("Check Notion connection error:", error);
+      return { connected: false };
+    }
+
+    return data || { connected: false };
+  } catch (error) {
+    console.error("Check Notion connection failed:", error);
+    return { connected: false };
+  }
+}
+
+export async function notionCreatePage(title: string, contentMD: string) {
+  try {
+    const { data, error } = await supabase.functions.invoke<{
+      pageUrl: string;
+      pageId: string;
+    }>("notion-create-page", {
+      body: { title, content: contentMD },
+    });
+
+    if (error) {
+      console.error("Notion create page error:", error);
+      throw new Error(error.message || "Failed to create Notion page");
+    }
+
+    if (!data) {
+      throw new Error("No data received from server");
+    }
+
+    return { pageUrl: data.pageUrl, pageId: data.pageId };
+  } catch (error) {
+    console.error("notionCreatePage error:", error);
+    throw error;
+  }
 }
 
 export async function gmailCreateDraft(to:string, subject:string, bodyHTML:string) {
