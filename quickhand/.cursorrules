@@ -1,0 +1,223 @@
+# Cursor Rules — QuickHand.work (Mobile AI Agent)
+
+## Project Goal
+Build a **mobile-first, role-aware AI agent** that helps non-technical users complete small digital tasks fast. Start **tiny**, add features incrementally, and keep the demo path flawless.
+
+## Golden Path (Hackathon Scope: 2–5 Features)
+1) **Role selector** (Founder/Student/Teacher/Creator/General) → loads tailored system prompt.  
+2) **Chat** with short **plan → run** loop (no long chains).  
+3) **Web search via Exa** → compile answer **with citations**.  
+4) **Actions via MCP**: create Notion page **or** draft Gmail email (start with drafts).  
+5) *(Optional)* Voice input/output after core is stable.
+
+> Prioritize **polish + reliability** over breadth. If any integration takes >90 min, **stub** and keep demo flawless.
+
+---
+
+## Tech Stack (Currently Installed)
+- **Expo (React Native + TypeScript)**, **Expo Router** v6
+- **State/async:** @tanstack/react-query v5
+- **Validation:** zod v3
+- **Backend:** Currently using client-side stubs in `lib/api.ts` (will move to Node/Express or Supabase Edge Functions)
+- **AI:** OpenAI (or Gemini) - to be integrated
+- **Search:** Exa API - to be integrated (server-side call only)
+- **Actions:** Smithery MCP (Notion, Gmail) - to be integrated via backend
+- **Storage/Auth:** Supabase - optional for MVP
+
+**Platform:** Windows 10/11, PowerShell
+
+---
+
+## Architecture & Current File Layout
+```
+/app                      # Expo Router screens
+  _layout.tsx            # Root layout
+  index.tsx              # RoleSelect screen
+  chat.tsx               # Chat + results screen
+/lib
+  api.ts                 # Client stubs (runAgent, exaSearch, notionCreatePage, gmailCreateDraft)
+  roles.ts               # Role presets (system prompts, labels)
+  types.ts               # Message, RoleKey, PlanStep types
+  /ui/                   # (future) Small presentational components
+/backend                 # (future) Express server or Supabase Edge Functions
+/assets                  # Icons, splash screens
+.env                     # Local secrets (gitignored)
+.env.example             # Template for required env vars
+```
+
+**Current State:** All API integrations are **stubbed** in `lib/api.ts`. Backend migration is future work.
+
+**Rule:** No secrets in the client. All API keys (Exa, MCP, OpenAI) will live on the server. The app calls our backend only.
+
+---
+
+## Expo & RN Good Practices (Apply in Code)
+- Use **Expo Router** for navigation; keep screens small and focused.
+- Use **TypeScript** everywhere. Strict props, return types, and zod for request/response schemas.
+- Lists: use **FlatList/SectionList** for any potentially long content.
+- Avoid blocking the UI thread. Offload heavy work to the backend (or use web workers if needed).
+- Test on **real devices** early (Expo Go or Preview builds via EAS).
+- Keep **bundles small**: no unnecessary libs. Prefer simple, composable components.
+- Handle **network states**: loading, error, offline. Provide clear toasts/messages.
+- Use **react-query** for server calls; cache keys are stable and typed.
+- **New Architecture enabled** (see app.json) - be mindful of compatibility.
+
+---
+
+## Agent Flow (Plan → Checkpoint → Act)
+- Agent proposes at most **3 steps**.  
+- Show a **checkpoint** before executing actions (human-in-the-loop).
+- Default to **safe actions** (Notion page creation, **Gmail draft** not send).
+- Responses include short, skimmable sections and **citations** if search was used.
+
+---
+
+## Exa API Usage (Grounded Answers)
+- **Current:** Stubbed in `lib/api.ts` → `exaSearch()`
+- **Future:** All Exa calls from backend endpoint: `/api/exa/search`
+- Prompt pattern for LLM:
+  - *"Using ONLY these sources (title + snippet + URL), answer briefly and add `[1]`, `[2]` style citations."*
+- Return `{ sources: [{title, url, snippet}], answer }` to the app.
+
+---
+
+## MCP (Smithery) Tool Contracts
+- **Current:** Stubbed in `lib/api.ts`
+- **Future backend endpoints:**
+  - `notion.create_page({ title: string, content_md: string }) -> { pageUrl, pageId }`
+  - `gmail.create_draft({ to: string[], subject: string, body_html: string }) -> { threadUrl, messageId }`
+- Always confirm titles/recipients via checkpoint UI before executing.
+
+---
+
+## Security & Environment Variables
+- Client only reads **EXPO_PUBLIC_*** values (non-sensitive, safe to bundle).
+- Secrets (LLM, Exa, MCP keys) are **server-side only** and never exposed to the app bundle.
+- Keep `.env` in `.gitignore` (already done).
+- Maintain `.env.example` with all required variables documented.
+
+**Example `.env.example`:**
+```bash
+# Public (safe to expose in app bundle)
+EXPO_PUBLIC_API_URL=http://localhost:3001
+
+# Server-only (NEVER use EXPO_PUBLIC_ prefix for these)
+OPENAI_API_KEY=sk-...
+EXA_API_KEY=...
+SMITHERY_API_KEY=...
+```
+
+---
+
+## UI/UX Principles
+- **Mobile-first**: Minimal, accessible, single-hand use.
+- Clear user flow: **Role pills → Prompt → Plan card → Run button**.
+- Output cards with action buttons: **Copy**, **Save to Notion**, **Draft in Gmail**.
+- Consistent spacing, 12–16px border radii, soft shadows.
+- Typography: System fonts or Inter (if added).
+- Light mode by default (see app.json: `userInterfaceStyle: "light"`).
+
+---
+
+## Error Handling & User-Facing Copy
+- Use friendly, actionable messages:  
+  - ✅ "Couldn't reach the server. Check connection and try again."  
+  - ✅ "Notion page wasn't created. Tap to retry or edit the title."
+- Provide a **Retry** button; log errors to console in dev mode.
+- Avoid technical jargon in user-facing text.
+
+---
+
+## Coding Standards
+- **TypeScript strict mode:** Use explicit types, avoid `any`.
+- **ESLint + Prettier:** To be added (recommended: `@expo/eslint-config`).
+- Keep components **<200 lines**; extract UI elements to `/lib/ui` when needed.
+- File naming: **kebab-case** for files, **PascalCase** for components.
+- Export default for screen components; named exports for utilities/types.
+- Keep business logic out of components; centralize in `/lib` or backend.
+
+---
+
+## Development Workflow (Windows/PowerShell)
+```powershell
+# Setup
+npm install
+cp .env.example .env    # Edit with your keys
+
+# Run
+npm start               # Start Expo dev server
+npm run android         # Android emulator/device
+npm run ios             # iOS simulator (macOS only)
+npm run web             # Web browser
+
+# EAS Build (already configured: projectId bf67a839-7e9d-4e5b-987e-30eab0c17637)
+npx eas build --platform android --profile preview
+```
+
+---
+
+## Testing & Demo Readiness
+**Manual smoke test checklist** (document in README):
+- [ ] Role select works (tap each role pill)
+- [ ] Chat echo responds with role prefix
+- [ ] Exa search returns mock citations
+- [ ] Notion draft creates mock page link
+- [ ] Gmail draft creates mock thread link
+- [ ] Error states display friendly messages
+- [ ] Loading states visible during async operations
+
+**Feature flagging:** Use environment variables or config to toggle risky features. Demo path must never block.
+
+---
+
+## Git Workflow & Commit Hygiene
+- **Conventional commits:** `feat:`, `fix:`, `chore:`, `docs:`, `refactor:`.
+- Small PRs that map to one feature or screen.
+- Keep `.env` out of version control (already gitignored).
+- README always reflects current setup commands.
+
+**Example commits:**
+```
+feat: add role selector screen
+fix: handle network timeout in chat
+chore: add eslint and prettier configs
+docs: update README with EAS build instructions
+```
+
+---
+
+## Current Stub Implementations
+The following functions in `lib/api.ts` are **mocked** and need real integration:
+
+1. **`runAgent()`** - Returns echo reply, needs LLM integration (OpenAI/Gemini)
+2. **`exaSearch()`** - Returns mock results, needs Exa API integration
+3. **`notionCreatePage()`** - Returns mock URL, needs Smithery MCP Notion integration
+4. **`gmailCreateDraft()`** - Returns mock URL, needs Smithery MCP Gmail integration
+
+When integrating, move API keys to backend and update these to call backend endpoints.
+
+---
+
+## Non-Goals (for MVP)
+- ❌ Complex auth, team workspaces, or full agent marketplaces
+- ❌ Heavy offline-first or background jobs
+- ❌ Sending live emails (drafts only) on day one
+- ❌ Multi-agent orchestration or long-running workflows
+- ❌ File uploads or document parsing (future iteration)
+
+---
+
+## When Generating Code (Instructions for Cursor)
+- **Follow TypeScript strict mode** - no `any`, explicit return types.
+- **Prefer editing existing files** over creating new ones unless necessary.
+- **Keep changes minimal** - don't refactor what's working.
+- **Stub over adding deps** - if a feature takes >90 min, mock it cleanly.
+- **Mobile performance** - avoid heavy computations on main thread.
+- **Respect existing architecture** - use react-query for async, zod for validation.
+- **Test instructions** - provide clear manual test steps for new features.
+- **Windows compatibility** - use cross-platform paths and PowerShell-friendly commands.
+
+---
+
+> **Cursor:** When generating or editing code, follow these rules, keep changes minimal, and prefer stubbing over adding new dependencies. Prioritize demo-readiness and mobile UX.
+
