@@ -140,10 +140,32 @@ const styles = StyleSheet.create({
     }),
   },
   toastSuccess: {
-    backgroundColor: "#10b981",
+    backgroundColor: "#10B981",
+    ...Platform.select({
+      ios: {
+        shadowColor: "#10B981",
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.3,
+        shadowRadius: 8,
+      },
+      android: {
+        elevation: 6,
+      },
+    }),
   },
   toastError: {
-    backgroundColor: "#ef4444",
+    backgroundColor: "#EF4444",
+    ...Platform.select({
+      ios: {
+        shadowColor: "#EF4444",
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.3,
+        shadowRadius: 8,
+      },
+      android: {
+        elevation: 6,
+      },
+    }),
   },
   toastContent: {
     flexDirection: "row",
@@ -162,16 +184,18 @@ const styles = StyleSheet.create({
     fontWeight: "500",
   },
   toastLinkButton: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    backgroundColor: "rgba(255, 255, 255, 0.2)",
-    borderRadius: 6,
-    marginLeft: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    backgroundColor: "rgba(255, 255, 255, 0.25)",
+    borderRadius: 8,
+    marginLeft: 12,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.3)",
   },
   toastLinkText: {
-    fontSize: 13,
-    color: "#fff",
-    fontWeight: "600",
+    fontSize: 14,
+    color: "#FFFFFF",
+    fontWeight: "700",
   },
   toastClose: {
     padding: 4,

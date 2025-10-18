@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { View, Text, TextInput, Pressable, StyleSheet, ScrollView } from "react-native";
+import { View, Text, TextInput, Pressable, StyleSheet, ScrollView, Platform } from "react-native";
 import { BaseModal } from "./modal";
 
 interface GmailConfirmModalProps {
@@ -74,73 +74,99 @@ export function GmailConfirmModal({
 
 const styles = StyleSheet.create({
   container: {
-    gap: 12,
+    gap: 20,
   },
   label: {
-    fontSize: 14,
+    fontSize: 16,
     fontWeight: "600",
-    color: "#333",
-    marginBottom: 4,
+    color: "#1E293B",
+    marginBottom: 8,
   },
   input: {
-    borderWidth: 1,
-    borderColor: "#ddd",
-    borderRadius: 8,
-    padding: 12,
-    fontSize: 14,
-    backgroundColor: "#fff",
+    borderWidth: 2,
+    borderColor: "#E2E8F0",
+    borderRadius: 12,
+    padding: 16,
+    fontSize: 16,
+    backgroundColor: "#FFFFFF",
+    color: "#1E293B",
   },
   previewBox: {
     borderWidth: 1,
-    borderColor: "#ddd",
-    borderRadius: 8,
-    padding: 12,
-    backgroundColor: "#f9f9f9",
+    borderColor: "#E2E8F0",
+    borderRadius: 12,
+    padding: 16,
+    backgroundColor: "#F8FAFC",
   },
   previewText: {
-    fontSize: 13,
-    color: "#666",
+    fontSize: 15,
+    color: "#64748B",
+    fontWeight: "500",
   },
   bodyPreview: {
     maxHeight: 150,
     borderWidth: 1,
-    borderColor: "#ddd",
-    borderRadius: 8,
-    padding: 12,
-    backgroundColor: "#f9f9f9",
+    borderColor: "#E2E8F0",
+    borderRadius: 12,
+    padding: 16,
+    backgroundColor: "#F8FAFC",
   },
   bodyPreviewText: {
-    fontSize: 13,
-    color: "#444",
+    fontSize: 14,
+    color: "#64748B",
     lineHeight: 20,
   },
   buttonRow: {
     flexDirection: "row",
-    gap: 12,
-    marginTop: 8,
+    gap: 16,
+    marginTop: 16,
   },
   button: {
     flex: 1,
-    paddingVertical: 12,
-    borderRadius: 8,
+    paddingVertical: 16,
+    borderRadius: 12,
     alignItems: "center",
     justifyContent: "center",
+    ...Platform.select({
+      ios: {
+        shadowColor: "#1E293B",
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.1,
+        shadowRadius: 4,
+      },
+      android: {
+        elevation: 2,
+      },
+    }),
   },
   cancelButton: {
-    backgroundColor: "#f0f0f0",
+    backgroundColor: "#F1F5F9",
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
   },
   cancelButtonText: {
-    fontSize: 15,
+    fontSize: 16,
     fontWeight: "600",
-    color: "#666",
+    color: "#64748B",
   },
   confirmButton: {
-    backgroundColor: "#16E0B4",
+    backgroundColor: "#4F7CFF",
+    ...Platform.select({
+      ios: {
+        shadowColor: "#4F7CFF",
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.3,
+        shadowRadius: 8,
+      },
+      android: {
+        elevation: 4,
+      },
+    }),
   },
   confirmButtonText: {
-    fontSize: 15,
-    fontWeight: "600",
-    color: "#fff",
+    fontSize: 16,
+    fontWeight: "700",
+    color: "#FFFFFF",
   },
   buttonDisabled: {
     opacity: 0.5,

@@ -47,7 +47,7 @@ export async function initiateGmailOAuth(): Promise<{
 
     // Use Expo's auth proxy for redirect
     const redirectUri = AuthSession.makeRedirectUri({
-      scheme: "quickhand",
+      useProxy: true,
       path: "oauth/gmail",
     });
 

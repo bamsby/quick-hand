@@ -268,14 +268,25 @@ const styles = StyleSheet.create({
     backgroundColor: "#fafafa",
   },
   button: {
-    backgroundColor: "#007AFF",
+    backgroundColor: "#4F7CFF",
     borderRadius: 12,
     padding: 16,
     alignItems: "center",
     marginTop: 8,
+    ...Platform.select({
+      ios: {
+        shadowColor: "#4F7CFF",
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.3,
+        shadowRadius: 8,
+      },
+      android: {
+        elevation: 4,
+      },
+    }),
   },
   buttonDisabled: {
-    backgroundColor: "#ccc",
+    backgroundColor: "#94A3B8",
   },
   buttonText: {
     color: "#fff",
@@ -287,9 +298,10 @@ const styles = StyleSheet.create({
     marginTop: 24,
   },
   linkText: {
-    color: "#007AFF",
+    color: "#4F7CFF",
     fontSize: 14,
     textAlign: "center",
     textDecorationLine: "underline",
+    fontWeight: "500",
   },
 });

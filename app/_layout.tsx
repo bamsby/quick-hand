@@ -37,7 +37,7 @@ export default function RootLayout() {
     <QueryClientProvider client={qc}>
       <Stack screenOptions={{ headerShown: true }}>
         <Stack.Screen name="index" options={{ title: "QuickHand • Roles" }} />
-        <Stack.Screen name="chat" options={{ title: "QuickHand • Chat" }} />
+        <Stack.Screen name="chat" options={{ headerShown: false }} />
       </Stack>
     </QueryClientProvider>
   );

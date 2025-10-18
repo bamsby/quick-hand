@@ -1,6 +1,7 @@
 import { useLocalSearchParams } from "expo-router";
 import { useState, useRef, useEffect } from "react";
-import { View, Text, TextInput, Pressable, StyleSheet, ScrollView, Linking, ActivityIndicator, KeyboardAvoidingView, Platform, Alert } from "react-native";
+import { View, Text, TextInput, Pressable, StyleSheet, ScrollView, Linking, ActivityIndicator, KeyboardAvoidingView, Platform, Alert, Image } from "react-native";
+import { useRouter } from "expo-router";
 import { ROLE_PRESETS, type RoleKey } from "../lib/roles";
 import { runAgent, notionCreatePage, gmailCreateDraft, checkNotionConnection, checkGmailConnection } from "../lib/api";
 import type { Message, ActionPlan, IntegrationStatus } from "../lib/types";
@@ -22,6 +23,7 @@ interface PendingAction {
 
 function ChatContent() {
   const { role = "general" } = useLocalSearchParams<{ role?: RoleKey }>();
+  const router = useRouter();
   const preset = ROLE_PRESETS[role as RoleKey] ?? ROLE_PRESETS.general;
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState<Message[]>([
@@ -541,37 +543,51 @@ function ChatContent() {
     >
       <View style={{ flex: 1 }}>
         <View style={styles.header}>
-          <View style={styles.headerTop}>
-            <Text style={styles.title}>{preset.label} Mode</Text>
-            <Pressable 
-              style={[styles.signOutButton, signingOut && styles.signOutButtonDisabled]}
-              onPress={() => {
-                console.log("Sign out button pressed!");
-                handleSignOut();
-              }}
-              disabled={signingOut}
-            >
-              {signingOut ? (
-                <ActivityIndicator size="small" color="#ef4444" />
-              ) : (
-                <Text style={styles.signOutText}>Sign Out</Text>
-              )}
-            </Pressable>
-          </View>
-          {user?.email && (
-            <Text style={styles.userEmail}>{user.email}</Text>
-          )}
-          <View style={styles.integrationStatus}>
-            {notionConnectionStatus?.connected && (
-              <View style={styles.statusBadge}>
-                <Text style={styles.statusText}>✓ Notion</Text>
+          <View style={styles.headerContent}>
+            <View style={styles.headerLeft}>
+              <Pressable 
+                style={styles.backButton}
+                onPress={() => router.back()}
+              >
+                <Text style={styles.backButtonText}>‹</Text>
+              </Pressable>
+              <View style={styles.roleTag}>
+                <Text style={styles.roleTagText}>{preset.label}</Text>
               </View>
-            )}
-            {gmailConnectionStatus?.connected && (
-              <View style={styles.statusBadge}>
-                <Text style={styles.statusText}>✓ Gmail</Text>
+            </View>
+            <View style={styles.headerRight}>
+              <View style={styles.headerInfo}>
+                {user?.email && (
+                  <Text style={styles.userEmail}>{user.email}</Text>
+                )}
+                <View style={styles.integrationStatus}>
+                  {notionConnectionStatus?.connected && (
+                    <View style={styles.statusBadge}>
+                      <Text style={styles.statusText}>✓ Notion</Text>
+                    </View>
+                  )}
+                  {gmailConnectionStatus?.connected && (
+                    <View style={styles.statusBadge}>
+                      <Text style={styles.statusText}>✓ Gmail</Text>
+                    </View>
+                  )}
+                </View>
               </View>
-            )}
+              <Pressable 
+                style={[styles.signOutIconButton, signingOut && styles.signOutButtonDisabled]}
+                onPress={() => {
+                  console.log("Sign out button pressed!");
+                  handleSignOut();
+                }}
+                disabled={signingOut}
+              >
+                {signingOut ? (
+                  <ActivityIndicator size="small" color="#ef4444" />
+                ) : (
+                  <Text style={styles.signOutIconText}>⏻</Text>
+                )}
+              </Pressable>
+            </View>
           </View>
         </View>
         <ScrollView 
@@ -584,7 +600,7 @@ function ChatContent() {
           {messages.filter(m => m.role !== "system").map((m) => (
             <View key={m.id}>
               <View style={[styles.bubble, m.role==="user"?styles.user:styles.assistant]}>
-                <Text>{m.content}</Text>
+                <Text style={m.role==="user"?styles.userText:styles.assistantText}>{m.content}</Text>
               </View>
               {m.citations && m.citations.length > 0 && (
                 <View style={styles.citations}>
@@ -753,111 +769,267 @@ export default function Chat() {
 
 const styles = StyleSheet.create({
   header:{ 
-    padding:16, 
-    borderBottomWidth:1, 
-    borderColor:"#eee",
-    backgroundColor: "#fafafa"
+    padding: 16, 
+    borderBottomWidth:0, 
+    backgroundColor: "#4F7CFF",
+    ...Platform.select({
+      ios: {
+        shadowColor: "#4F7CFF",
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.3,
+        shadowRadius: 8,
+      },
+      android: {
+        elevation: 6,
+      },
+    }),
   },
-  headerTop: {
+  headerContent: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 8,
   },
-  title:{ fontSize:18, fontWeight:"600" },
-  signOutButton: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
+  headerLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    flex: 1,
+  },
+  headerRight: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
+  headerInfo: {
+    alignItems: "flex-end",
+    gap: 4,
+  },
+  backButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: "rgba(255,255,255,0.25)",
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.4)",
+    ...Platform.select({
+      ios: {
+        shadowColor: "#000000",
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.2,
+        shadowRadius: 4,
+      },
+      android: {
+        elevation: 3,
+      },
+    }),
+  },
+  backButtonText: {
+    fontSize: 20,
+    color: "#FFFFFF",
+    fontWeight: "700",
+    textAlign: "center",
+    lineHeight: 20,
+    includeFontPadding: false,
+    textAlignVertical: "center",
+  },
+  roleTag: {
+    backgroundColor: "rgba(255,255,255,0.1)",
+    paddingHorizontal: 8,
+    paddingVertical: 2,
     borderRadius: 6,
     borderWidth: 1,
-    borderColor: "#ef4444",
+    borderColor: "rgba(255,255,255,0.3)",
+  },
+  roleTagText: {
+    fontSize: 10,
+    fontWeight: "500",
+    color: "rgba(255,255,255,0.9)",
+    textTransform: "uppercase",
+    letterSpacing: 0.8,
+  },
+  signOutIconButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: "rgba(255,255,255,0.25)",
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.4)",
+    ...Platform.select({
+      ios: {
+        shadowColor: "#000000",
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.2,
+        shadowRadius: 4,
+      },
+      android: {
+        elevation: 3,
+      },
+    }),
   },
   signOutButtonDisabled: {
     opacity: 0.5,
   },
-  signOutText: {
-    color: "#ef4444",
-    fontSize: 14,
-    fontWeight: "500",
+  signOutIconText: {
+    fontSize: 18,
+    color: "#FFFFFF",
+    fontWeight: "700",
   },
   userEmail: {
-    fontSize: 14,
-    color: "#666",
-    marginBottom: 8,
+    fontSize: 12,
+    color: "rgba(255,255,255,0.8)",
   },
   integrationStatus: {
     flexDirection: "row",
     gap: 8,
   },
   statusBadge: {
-    backgroundColor: "#10b981",
+    backgroundColor: "rgba(255,255,255,0.2)",
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.3)",
   },
   statusText: {
-    color: "#fff",
-    fontSize: 12,
-    fontWeight: "500",
+    color: "#FFFFFF",
+    fontSize: 10,
+    fontWeight: "600",
   },
-  bubble:{ marginBottom:10, padding:12, borderRadius:12, backgroundColor:"#f7f7f7" },
-  user:{ alignSelf:"flex-end", backgroundColor:"#def7f1" },
-  assistant:{ alignSelf:"flex-start" },
-  citations: {
-    marginTop: 8,
-    marginBottom: 12,
-    padding: 12,
-    backgroundColor: "#fafafa",
-    borderRadius: 8,
+  bubble:{ 
+    marginBottom:16, 
+    padding:16, 
+    borderRadius:16, 
+    backgroundColor:"#FFFFFF",
+    ...Platform.select({
+      ios: {
+        shadowColor: "#1E293B",
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.1,
+        shadowRadius: 4,
+      },
+      android: {
+        elevation: 2,
+      },
+    }),
+  },
+  user:{ 
+    alignSelf:"flex-end", 
+    backgroundColor:"#4F7CFF",
+    maxWidth: "80%",
+  },
+  assistant:{ 
+    alignSelf:"flex-start",
+    backgroundColor: "#FFFFFF",
     borderWidth: 1,
-    borderColor: "#e0e0e0",
+    borderColor: "#E2E8F0",
+    maxWidth: "90%",
+  },
+  userText: {
+    color: "#FFFFFF",
+    fontSize: 16,
+    lineHeight: 22,
+  },
+  assistantText: {
+    color: "#1E293B",
+    fontSize: 16,
+    lineHeight: 22,
+  },
+  citations: {
+    marginTop: 12,
+    marginBottom: 16,
+    padding: 16,
+    backgroundColor: "#EBF2FF",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#4F7CFF",
+    ...Platform.select({
+      ios: {
+        shadowColor: "#4F7CFF",
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.1,
+        shadowRadius: 4,
+      },
+      android: {
+        elevation: 2,
+      },
+    }),
   },
   citationsTitle: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: "#666",
-    marginBottom: 8,
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#1E293B",
+    marginBottom: 12,
   },
   citationCard: {
     flexDirection: "row",
-    padding: 10,
-    marginBottom: 6,
-    backgroundColor: "#fff",
-    borderRadius: 8,
+    padding: 12,
+    marginBottom: 8,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 10,
     borderWidth: 1,
-    borderColor: "#e8e8e8",
+    borderColor: "#E2E8F0",
+    ...Platform.select({
+      ios: {
+        shadowColor: "#1E293B",
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.05,
+        shadowRadius: 2,
+      },
+      android: {
+        elevation: 1,
+      },
+    }),
   },
   citationNumber: {
     fontSize: 12,
     fontWeight: "700",
-    color: "#16E0B4",
-    marginRight: 8,
+    color: "#4F7CFF",
+    marginRight: 10,
+    backgroundColor: "#EBF2FF",
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
   },
   citationTitle: {
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: "600",
-    color: "#333",
+    color: "#1E293B",
     marginBottom: 4,
   },
   citationSnippet: {
-    fontSize: 12,
-    color: "#666",
-    lineHeight: 16,
+    fontSize: 13,
+    color: "#64748B",
+    lineHeight: 18,
   },
   actionsCard: {
-    marginTop: 8,
-    marginBottom: 12,
-    padding: 12,
-    backgroundColor: "#f0f9ff",
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: "#bae6fd",
+    marginTop: 12,
+    marginBottom: 16,
+    padding: 16,
+    backgroundColor: "#EBF2FF",
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: "#4F7CFF",
+    ...Platform.select({
+      ios: {
+        shadowColor: "#4F7CFF",
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.2,
+        shadowRadius: 8,
+      },
+      android: {
+        elevation: 4,
+      },
+    }),
   },
   actionsTitle: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: "#0c4a6e",
-    marginBottom: 10,
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#1E293B",
+    marginBottom: 12,
   },
   actionRow: {
     flexDirection: "row",
@@ -866,66 +1038,152 @@ const styles = StyleSheet.create({
   },
   actionButton: {
     flex: 1,
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    backgroundColor: "#16E0B4",
-    borderRadius: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    backgroundColor: "#4F7CFF",
+    borderRadius: 12,
     alignItems: "center",
     justifyContent: "center",
-    minHeight: 40,
+    minHeight: 44,
+    ...Platform.select({
+      ios: {
+        shadowColor: "#4F7CFF",
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.3,
+        shadowRadius: 4,
+      },
+      android: {
+        elevation: 3,
+      },
+    }),
   },
   actionButtonText: {
-    color: "#fff",
-    fontSize: 14,
+    color: "#FFFFFF",
+    fontSize: 15,
     fontWeight: "600",
   },
   actionDone: {
-    backgroundColor: "#10b981",
+    backgroundColor: "#10B981",
   },
   actionError: {
-    backgroundColor: "#ef4444",
+    backgroundColor: "#EF4444",
   },
   resultLink: {
-    marginLeft: 8,
-    color: "#16E0B4",
+    marginLeft: 12,
+    color: "#4F7CFF",
     fontSize: 14,
     fontWeight: "600",
+    textDecorationLine: "underline",
   },
   errorText: {
-    marginLeft: 8,
-    color: "#ef4444",
-    fontSize: 12,
+    marginLeft: 12,
+    color: "#EF4444",
+    fontSize: 13,
+    fontWeight: "500",
   },
   reviewPlanButton: {
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    backgroundColor: "#16E0B4",
-    borderRadius: 8,
+    paddingVertical: 16,
+    paddingHorizontal: 24,
+    backgroundColor: "#4F7CFF",
+    borderRadius: 12,
     alignItems: "center",
     justifyContent: "center",
+    ...Platform.select({
+      ios: {
+        shadowColor: "#4F7CFF",
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.4,
+        shadowRadius: 8,
+      },
+      android: {
+        elevation: 6,
+      },
+    }),
   },
   reviewPlanButtonText: {
-    color: "#fff",
-    fontSize: 15,
-    fontWeight: "600",
+    color: "#FFFFFF",
+    fontSize: 16,
+    fontWeight: "700",
   },
   loadingBubble: {
     flexDirection: "row",
     alignItems: "center",
     alignSelf: "flex-start",
-    padding: 12,
-    borderRadius: 12,
-    backgroundColor: "#f7f7f7",
-    marginBottom: 10,
+    padding: 16,
+    borderRadius: 16,
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    marginBottom: 16,
+    ...Platform.select({
+      ios: {
+        shadowColor: "#1E293B",
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.1,
+        shadowRadius: 4,
+      },
+      android: {
+        elevation: 2,
+      },
+    }),
   },
   loadingText: {
-    marginLeft: 8,
-    color: "#666",
-    fontSize: 14,
+    marginLeft: 12,
+    color: "#64748B",
+    fontSize: 15,
+    fontWeight: "500",
   },
-  inputBar:{ flexDirection:"row", padding:12, borderTopWidth:1, borderColor:"#eee", alignItems:"flex-end" },
-  input:{ flex:1, padding:12, backgroundColor:"#f0f0f0", borderRadius:8, marginRight:8, minHeight:44, maxHeight:120 },
-  send:{ paddingHorizontal:16, paddingVertical:12, justifyContent:"center", borderRadius:8, backgroundColor:"#16E0B4" },
-  sendDisabled: { opacity: 0.5 },
+  inputBar:{ 
+    flexDirection:"row", 
+    padding:20, 
+    borderTopWidth:0, 
+    alignItems:"flex-end",
+    backgroundColor: "#FFFFFF",
+    ...Platform.select({
+      ios: {
+        shadowColor: "#1E293B",
+        shadowOffset: { width: 0, height: -2 },
+        shadowOpacity: 0.1,
+        shadowRadius: 8,
+      },
+      android: {
+        elevation: 4,
+      },
+    }),
+  },
+  input:{ 
+    flex:1, 
+    padding:16, 
+    backgroundColor:"#F8FAFC", 
+    borderRadius:12, 
+    marginRight:12, 
+    minHeight:48, 
+    maxHeight:120,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    fontSize: 16,
+  },
+  send:{ 
+    paddingHorizontal:20, 
+    paddingVertical:16, 
+    justifyContent:"center", 
+    borderRadius:12, 
+    backgroundColor:"#4F7CFF",
+    ...Platform.select({
+      ios: {
+        shadowColor: "#4F7CFF",
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.3,
+        shadowRadius: 4,
+      },
+      android: {
+        elevation: 3,
+      },
+    }),
+  },
+  sendDisabled: { 
+    opacity: 0.5,
+    backgroundColor: "#94A3B8",
+  },
 });
 

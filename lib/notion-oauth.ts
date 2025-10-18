@@ -46,8 +46,9 @@ export async function initiateNotionOAuth(): Promise<{
     }
 
     // Create redirect URI based on environment
+    // For Expo Go, use the development URL format
     const redirectUri = AuthSession.makeRedirectUri({
-      scheme: "quickhand",
+      useProxy: true,
       path: "oauth/notion",
     });
 

@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
-import { View, Text, TextInput, Pressable, StyleSheet, ScrollView, ActivityIndicator } from "react-native";
+import { View, Text, TextInput, Pressable, StyleSheet, ScrollView, ActivityIndicator, Platform } from "react-native";
 import { BaseModal } from "./modal";
 import type { Citation } from "../types";
 import { notionListPages } from "../api";
@@ -145,100 +145,148 @@ export function NotionConfirmModal({
 
 const styles = StyleSheet.create({
   container: {
-    gap: 12,
+    gap: 20,
   },
   label: {
-    fontSize: 14,
+    fontSize: 16,
     fontWeight: "600",
-    color: "#333",
-    marginBottom: 4,
+    color: "#1E293B",
+    marginBottom: 8,
   },
   input: {
-    borderWidth: 1,
-    borderColor: "#ddd",
-    borderRadius: 8,
-    padding: 12,
-    fontSize: 14,
-    backgroundColor: "#fff",
+    borderWidth: 2,
+    borderColor: "#E2E8F0",
+    borderRadius: 12,
+    padding: 16,
+    fontSize: 16,
+    backgroundColor: "#FFFFFF",
+    color: "#1E293B",
   },
   loadingContainer: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 8,
-    padding: 12,
-    backgroundColor: "#f9f9f9",
-    borderRadius: 8,
+    gap: 12,
+    padding: 16,
+    backgroundColor: "#F8FAFC",
+    borderRadius: 12,
     borderWidth: 1,
-    borderColor: "#ddd",
+    borderColor: "#E2E8F0",
   },
   loadingText: {
-    fontSize: 13,
-    color: "#666",
+    fontSize: 15,
+    color: "#64748B",
+    fontWeight: "500",
   },
   pageSelector: {
-    maxHeight: 50,
+    maxHeight: 60,
   },
   pageChip: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    marginRight: 8,
-    borderRadius: 20,
-    backgroundColor: "#f0f0f0",
-    borderWidth: 1,
-    borderColor: "#ddd",
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    marginRight: 12,
+    borderRadius: 24,
+    backgroundColor: "#F1F5F9",
+    borderWidth: 2,
+    borderColor: "#E2E8F0",
+    ...Platform.select({
+      ios: {
+        shadowColor: "#1E293B",
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.05,
+        shadowRadius: 2,
+      },
+      android: {
+        elevation: 1,
+      },
+    }),
   },
   pageChipSelected: {
-    backgroundColor: "#16E0B4",
-    borderColor: "#16E0B4",
+    backgroundColor: "#4F7CFF",
+    borderColor: "#4F7CFF",
+    ...Platform.select({
+      ios: {
+        shadowColor: "#4F7CFF",
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.2,
+        shadowRadius: 4,
+      },
+      android: {
+        elevation: 3,
+      },
+    }),
   },
   pageChipText: {
-    fontSize: 13,
-    fontWeight: "500",
-    color: "#666",
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#64748B",
   },
   pageChipTextSelected: {
-    color: "#fff",
+    color: "#FFFFFF",
   },
   contentPreview: {
     maxHeight: 150,
     borderWidth: 1,
-    borderColor: "#ddd",
-    borderRadius: 8,
-    padding: 12,
-    backgroundColor: "#f9f9f9",
+    borderColor: "#E2E8F0",
+    borderRadius: 12,
+    padding: 16,
+    backgroundColor: "#F8FAFC",
   },
   contentText: {
-    fontSize: 13,
-    color: "#666",
-    lineHeight: 18,
+    fontSize: 14,
+    color: "#64748B",
+    lineHeight: 20,
   },
   buttonRow: {
     flexDirection: "row",
-    gap: 12,
-    marginTop: 8,
+    gap: 16,
+    marginTop: 16,
   },
   button: {
     flex: 1,
-    paddingVertical: 12,
-    borderRadius: 8,
+    paddingVertical: 16,
+    borderRadius: 12,
     alignItems: "center",
     justifyContent: "center",
+    ...Platform.select({
+      ios: {
+        shadowColor: "#1E293B",
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.1,
+        shadowRadius: 4,
+      },
+      android: {
+        elevation: 2,
+      },
+    }),
   },
   cancelButton: {
-    backgroundColor: "#f0f0f0",
+    backgroundColor: "#F1F5F9",
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
   },
   cancelButtonText: {
-    fontSize: 15,
+    fontSize: 16,
     fontWeight: "600",
-    color: "#666",
+    color: "#64748B",
   },
   confirmButton: {
-    backgroundColor: "#16E0B4",
+    backgroundColor: "#4F7CFF",
+    ...Platform.select({
+      ios: {
+        shadowColor: "#4F7CFF",
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.3,
+        shadowRadius: 8,
+      },
+      android: {
+        elevation: 4,
+      },
+    }),
   },
   confirmButtonText: {
-    fontSize: 15,
-    fontWeight: "600",
-    color: "#fff",
+    fontSize: 16,
+    fontWeight: "700",
+    color: "#FFFFFF",
   },
   buttonDisabled: {
     opacity: 0.5,

@@ -1,4 +1,4 @@
-import { View, Text, StyleSheet, Animated } from "react-native";
+import { View, Text, StyleSheet, Animated, Platform, Image } from "react-native";
 import { useEffect, useRef } from "react";
 
 export function SplashScreen() {
@@ -32,13 +32,17 @@ export function SplashScreen() {
           },
         ]}
       >
-        {/* Logo Icon - Lightning Bolt + Hand */}
+        {/* Logo Icon - Professional QuickHand Logo */}
         <View style={styles.logoIcon}>
-          <Text style={styles.logoEmoji}>⚡👆</Text>
+          <Image 
+            source={require('../../assets/logo.png')} 
+            style={styles.logoImage}
+            resizeMode="contain"
+          />
         </View>
         
         <Text style={styles.brandName}>QuickHand</Text>
-        <Text style={styles.tagline}>Your AI execution assistant</Text>
+        <Text style={styles.tagline}>ROLE-AWARE AI ASSISTANT</Text>
       </Animated.View>
       
       {/* Loading indicator */}
@@ -61,7 +65,7 @@ export function SplashScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#6366f1",
+    backgroundColor: "#4F7CFF",
     justifyContent: "center",
     alignItems: "center",
   },
@@ -69,17 +73,27 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   logoIcon: {
-    flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "rgba(255,255,255,0.2)",
-    borderRadius: 24,
-    padding: 20,
-    marginBottom: 24,
+    backgroundColor: "rgba(255,255,255,0.15)",
+    borderRadius: 32,
+    padding: 32,
+    marginBottom: 32,
+    ...Platform.select({
+      ios: {
+        shadowColor: "#4F7CFF",
+        shadowOffset: { width: 0, height: 8 },
+        shadowOpacity: 0.3,
+        shadowRadius: 16,
+      },
+      android: {
+        elevation: 8,
+      },
+    }),
   },
-  logoEmoji: {
-    fontSize: 56,
-    lineHeight: 64,
+  logoImage: {
+    width: 160,
+    height: 100,
   },
   brandName: {
     fontSize: 42,
@@ -89,9 +103,11 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   tagline: {
-    fontSize: 16,
-    color: "rgba(255,255,255,0.85)",
-    fontWeight: "500",
+    fontSize: 14,
+    color: "rgba(255,255,255,0.9)",
+    fontWeight: "600",
+    letterSpacing: 1,
+    textTransform: "uppercase",
   },
   loadingContainer: {
     position: "absolute",
@@ -109,7 +125,7 @@ const styles = StyleSheet.create({
   loadingProgress: {
     height: "100%",
     width: "60%",
-    backgroundColor: "#fbbf24",
+    backgroundColor: "#FFFFFF",
     borderRadius: 2,
   },
 });
