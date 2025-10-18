@@ -20,10 +20,10 @@ export default function RoleSelect() {
   );
 }
 const styles = StyleSheet.create({
-  wrap:{ flex:1, padding:20, gap:16, justifyContent:"center" },
-  h1:{ fontSize:24, fontWeight:"600" },
-  grid:{ flexDirection:"row", flexWrap:"wrap", gap:12 },
-  pill:{ paddingVertical:10, paddingHorizontal:14, borderRadius:999, backgroundColor:"#efefef" },
+  wrap:{ flex:1, padding:20, justifyContent:"center" },
+  h1:{ fontSize:24, fontWeight:"600", marginBottom:16 },
+  grid:{ flexDirection:"row", flexWrap:"wrap", marginBottom:16 },
+  pill:{ paddingVertical:10, paddingHorizontal:14, borderRadius:999, backgroundColor:"#efefef", marginRight:12, marginBottom:12 },
   pillText:{ fontWeight:"600" }
 });
 

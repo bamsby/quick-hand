@@ -24,14 +24,20 @@ npm run web        # Web browser
 ## 📁 Project Structure
 
 ```
-/app                # Expo Router screens
-  _layout.tsx      # Root layout
-  index.tsx        # Role selector screen
-  chat.tsx         # Chat interface
+/app                      # Expo Router screens
+  _layout.tsx            # Root layout with splash screen integration
+  index.tsx              # Role selector screen
+  chat.tsx               # Chat interface
 /lib
-  api.ts           # API stubs (runAgent, exaSearch, notionCreatePage, gmailCreateDraft)
-  roles.ts         # Role presets (system prompts for Founder/Student/Teacher/Creator/General)
-  types.ts         # TypeScript types (Message, RoleKey, PlanStep)
+  api.ts                 # API stubs (runAgent, exaSearch, notionCreatePage, gmailCreateDraft)
+  roles.ts               # Role presets (system prompts for Founder/Student/Teacher/Creator/General)
+  types.ts               # TypeScript types (Message, RoleKey, PlanStep)
+  use-app-launch.ts      # App initialization hook (preloads role presets)
+  /ui
+    splash-screen.tsx    # Animated splash screen component
+/assets
+  logo.svg               # QuickHand logo (source file)
+  README.md              # Asset generation instructions
 ```
 
 ## 🔧 Environment Setup
@@ -54,6 +60,7 @@ SMITHERY_API_KEY=...
 
 All integrations are **stubbed** for rapid prototyping:
 
+- ✅ **App Launch:** Animated splash screen with role preset preloading
 - ✅ Role selector (5 roles: Founder, Student, Teacher, Creator, General)
 - ✅ Chat interface with message history
 - 🚧 **Stubbed:** LLM agent (OpenAI/Gemini) - returns echo replies
@@ -63,8 +70,18 @@ All integrations are **stubbed** for rapid prototyping:
 
 **Next steps:** Migrate API stubs to backend (Node/Express or Supabase Edge Functions) and integrate real services.
 
+### 🎨 App Launch Flow
+1. User opens app → sees animated QuickHand splash screen (⚡👆)
+2. App preloads role presets from `lib/roles.ts` (5 roles validated)
+3. Minimum 1.5s splash duration ensures smooth UX
+4. Transitions to role selector screen
+
+**See** `assets/README.md` for logo asset generation instructions.
+
 ## 🧪 Manual Testing Checklist
 
+- [x] **App launch:** Splash screen displays with animation
+- [x] **Role presets:** 5 roles load successfully (check console logs)
 - [ ] Role select works (tap each role pill)
 - [ ] Chat displays messages and role-based responses
 - [ ] Exa search returns mock citations

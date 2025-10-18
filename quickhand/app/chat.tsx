@@ -48,8 +48,8 @@ const styles = StyleSheet.create({
   bubble:{ marginBottom:10, padding:12, borderRadius:12, backgroundColor:"#f7f7f7" },
   user:{ alignSelf:"flex-end", backgroundColor:"#def7f1" },
   assistant:{ alignSelf:"flex-start" },
-  inputBar:{ flexDirection:"row", gap:8, padding:12, borderTopWidth:1, borderColor:"#eee" },
-  input:{ flex:1, padding:12, backgroundColor:"#f0f0f0", borderRadius:8 },
+  inputBar:{ flexDirection:"row", padding:12, borderTopWidth:1, borderColor:"#eee" },
+  input:{ flex:1, padding:12, backgroundColor:"#f0f0f0", borderRadius:8, marginRight:8 },
   send:{ paddingHorizontal:16, justifyContent:"center", borderRadius:8, backgroundColor:"#16E0B4" }
 });
 
