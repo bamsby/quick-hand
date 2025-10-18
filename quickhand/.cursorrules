@@ -4,7 +4,7 @@
 Build a **mobile-first, role-aware AI agent** that helps non-technical users complete small digital tasks fast. Start **tiny**, add features incrementally, and keep the demo path flawless.
 
 ## Golden Path (Hackathon Scope: 2–5 Features)
-1) **Role selector** (Founder/Student/Teacher/Creator/General) → loads tailored system prompt.  
+1) **Role selector** (Founder/Student/Teacher/Creator/Property Agent/Product Manager/General) → loads tailored system prompt.  
 2) **Chat** with short **plan → run** loop (no long chains).  
 3) **Web search via Exa** → compile answer **with citations**.  
 4) **Actions via MCP**: create Notion page **or** draft Gmail email (start with drafts).  
