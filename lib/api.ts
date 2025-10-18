@@ -189,14 +189,14 @@ export async function notionCreatePage(
   }
 }
 
-export async function gmailCreateDraft(to: string, subject: string, bodyHTML: string) {
+export async function gmailCreateDraft(to: string, subject: string, bodyHTML: string, citations?: Citation[]) {
   try {
     const { data, error } = await supabase.functions.invoke<{
       draftUrl: string;
       messageId: string;
       threadId: string;
     }>("gmail-create-draft", {
-      body: { to, subject, body: bodyHTML },
+      body: { to, subject, body: bodyHTML, citations },
     });
 
     if (error) {

@@ -415,6 +415,7 @@ async function classifyIntent(
   query: string,
   role: string,
   supabaseUrl: string,
+  history: Message[],
   authHeader?: string
 ): Promise<{ intent: string; slots: { topic: string; needs: { location: boolean; email: boolean } } }> {
   try {
@@ -429,7 +430,7 @@ async function classifyIntent(
     const response = await fetch(`${supabaseUrl}/functions/v1/classify-intent`, {
       method: "POST",
       headers,
-      body: JSON.stringify({ query, role }),
+      body: JSON.stringify({ query, role, history }),
     });
 
     if (!response.ok) {
@@ -725,7 +726,7 @@ serve(async (req) => {
     // Classify intent first
     let intentResult;
     try {
-      const intentResponse = await classifyIntent(userQuery, role, supabaseUrl, authHeader);
+      const intentResponse = await classifyIntent(userQuery, role, supabaseUrl, history, authHeader);
       
       // Check if we need additional information
       if ('needs_info' in intentResponse && intentResponse.needs_info) {

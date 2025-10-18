@@ -12,6 +12,12 @@ interface RequestBody {
   to: string;
   subject: string;
   body: string;
+  citations?: Array<{
+    id: number;
+    title: string;
+    url: string;
+    snippet: string;
+  }>;
 }
 
 interface GmailDraftResponse {
@@ -61,7 +67,9 @@ serve(async (req) => {
 
     // Parse request body
     const body: RequestBody = await req.json();
-    const { to, subject, body: bodyHTML } = body;
+    const { to, subject, body: bodyHTML, citations } = body;
+
+    console.log("Gmail create draft request:", { to, subject, bodyLength: bodyHTML?.length, citationsCount: citations?.length });
 
     if (!to || !subject || !bodyHTML) {
       return new Response(
@@ -71,6 +79,17 @@ serve(async (req) => {
     }
 
     console.log("Creating Gmail draft for:", to);
+
+    // Format body with citations if provided
+    let finalBodyHTML = bodyHTML;
+    if (citations && citations.length > 0) {
+      const citationsHTML = citations.map(citation => 
+        `<p><strong>[${citation.id}] ${citation.title}</strong><br>
+        <a href="${citation.url}" target="_blank">${citation.url}</a></p>`
+      ).join('');
+      
+      finalBodyHTML += `<br><br><hr><h3>Sources</h3>${citationsHTML}`;
+    }
 
     // Get valid access token (auto-refreshes if needed)
     const tokenResult = await getValidGmailToken(supabase, user.id);
@@ -91,7 +110,7 @@ serve(async (req) => {
       "MIME-Version: 1.0",
       "Content-Type: text/html; charset=utf-8",
       "",
-      bodyHTML,
+      finalBodyHTML,
     ].join("\r\n");
 
     // Base64url encode (Gmail API requirement)

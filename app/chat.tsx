@@ -534,7 +534,8 @@ function ChatContent() {
           const { threadUrl } = await gmailCreateDraft(
             action.params?.to || "your.email@example.com",
             action.params?.subject || "",
-            action.params?.bodyHTML || action.params?.body || ""
+            action.params?.bodyHTML || action.params?.body || "",
+            action.params?.citations || []
           );
           result = threadUrl;
         }

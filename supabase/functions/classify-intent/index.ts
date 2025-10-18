@@ -11,6 +11,7 @@ const corsHeaders = {
 interface RequestBody {
   query: string;
   role: string;
+  history?: Array<{ role: string; content: string }>;
 }
 
 interface IntentResponse {
@@ -34,8 +35,32 @@ interface NeedsInfoResponse {
 async function classifyIntent(
   query: string,
   role: string,
-  openAiKey: string
+  openAiKey: string,
+  history?: Array<{ role: string; content: string }>
 ): Promise<IntentResponse> {
+  // Build conversation context from history
+  const messages: Array<{ role: string; content: string }> = [
+    {
+      role: "system",
+      content: "You are an intent classifier. Analyze the user's query and classify it into one of these intents: info_lookup (seeking information), summarize (asking for summary), email_draft (wanting to draft email), action_request (asking to perform action), chitchat (casual conversation). Extract the main topic and determine if location or email context is needed. IMPORTANT: If the user mentions a specific location in their query (like 'Singapore', 'New York', 'London', etc.), set needs_location to false since the location is already provided. ALSO IMPORTANT: If the conversation history shows the user already provided an email address (like 'alan@gmail.com'), set needs_email to false."
+    }
+  ];
+  
+  // Add recent conversation history for context (last 4 messages)
+  if (history && history.length > 0) {
+    const recentHistory = history.slice(-4);
+    messages.push(...recentHistory.map(msg => ({
+      role: msg.role === "system" ? "system" : msg.role,
+      content: msg.content
+    })));
+  }
+  
+  // Add the current query
+  messages.push({
+    role: "user",
+    content: `Query: "${query}"\nRole: ${role}`
+  });
+  
   const response = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
     headers: {
@@ -44,16 +69,7 @@ async function classifyIntent(
     },
     body: JSON.stringify({
       model: "gpt-4o-mini",
-      messages: [
-        {
-          role: "system",
-          content: "You are an intent classifier. Analyze the user's query and classify it into one of these intents: info_lookup (seeking information), summarize (asking for summary), email_draft (wanting to draft email), action_request (asking to perform action), chitchat (casual conversation). Extract the main topic and determine if location or email context is needed. IMPORTANT: If the user mentions a specific location in their query (like 'Singapore', 'New York', 'London', etc.), set needs_location to false since the location is already provided."
-        },
-        {
-          role: "user",
-          content: `Query: "${query}"\nRole: ${role}`
-        }
-      ],
+      messages,
       functions: [
         {
           name: "classify_intent",
@@ -132,14 +148,14 @@ serve(async (req) => {
 
     // Parse request
     const body: RequestBody = await req.json();
-    const { query, role } = body;
+    const { query, role, history } = body;
 
     if (!query || !role) {
       throw new Error("Query and role are required");
     }
 
-    // Classify intent
-    const intentResult = await classifyIntent(query, role, openAiKey);
+    // Classify intent with conversation history
+    const intentResult = await classifyIntent(query, role, openAiKey, history);
 
     console.log("Intent classification:", {
       query: query.substring(0, 100),

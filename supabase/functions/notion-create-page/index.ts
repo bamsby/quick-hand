@@ -164,6 +164,8 @@ serve(async (req) => {
     const body: RequestBody = await req.json();
     const { title, content, parentPageId, citations } = body;
 
+    console.log("Notion create page request:", { title, contentLength: content?.length, citationsCount: citations?.length });
+
     if (!title) {
       return new Response(
         JSON.stringify({ error: "Title is required" }),
