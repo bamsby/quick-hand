@@ -71,6 +71,24 @@ export async function checkNotionConnection(): Promise<IntegrationStatus> {
   }
 }
 
+export async function checkGmailConnection(): Promise<IntegrationStatus> {
+  try {
+    const { data, error } = await supabase.functions.invoke<IntegrationStatus>(
+      "gmail-auth-status"
+    );
+
+    if (error) {
+      console.error("Check Gmail connection error:", error);
+      return { connected: false };
+    }
+
+    return data || { connected: false };
+  } catch (error) {
+    console.error("Check Gmail connection failed:", error);
+    return { connected: false };
+  }
+}
+
 export async function notionListPages() {
   try {
     const { data, error } = await supabase.functions.invoke<{
@@ -123,8 +141,29 @@ export async function notionCreatePage(
   }
 }
 
-export async function gmailCreateDraft(to:string, subject:string, bodyHTML:string) {
-  // TODO: call Smithery MCP Gmail. Return mocked link.
-  return { threadUrl: "https://mail.google.com/mock-thread" };
+export async function gmailCreateDraft(to: string, subject: string, bodyHTML: string) {
+  try {
+    const { data, error } = await supabase.functions.invoke<{
+      draftUrl: string;
+      messageId: string;
+      threadId: string;
+    }>("gmail-create-draft", {
+      body: { to, subject, body: bodyHTML },
+    });
+
+    if (error) {
+      console.error("Gmail create draft error:", error);
+      throw new Error(error.message || "Failed to create Gmail draft");
+    }
+
+    if (!data) {
+      throw new Error("No data received from server");
+    }
+
+    return { threadUrl: data.draftUrl, messageId: data.messageId };
+  } catch (error) {
+    console.error("gmailCreateDraft error:", error);
+    throw error;
+  }
 }
 

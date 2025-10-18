@@ -200,6 +200,104 @@ async function generateTitle(content: string, openAiKey: string): Promise<string
   return title.replace(/^["']|["']$/g, "");
 }
 
+// Helper: Format plain text email body to HTML
+function formatEmailBody(text: string): string {
+  // Split by double newlines for paragraphs
+  const paragraphs = text.split(/\n\n+/);
+  
+  // Format each paragraph, preserving single line breaks
+  const formatted = paragraphs
+    .map(p => p.trim())
+    .filter(p => p.length > 0)
+    .map(p => `<p>${p.replace(/\n/g, '<br>')}</p>`)
+    .join('\n');
+  
+  return `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+p { margin: 0 0 1em 0; }
+</style>
+</head>
+<body>
+${formatted}
+</body>
+</html>`;
+}
+
+// Helper: Generate email content using OpenAI
+async function generateEmailContent(
+  userQuery: string,
+  researchContent: string,
+  openAiKey: string
+): Promise<string> {
+  const response = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${openAiKey}`,
+    },
+    body: JSON.stringify({
+      model: "gpt-4o-mini",
+      messages: [
+        {
+          role: "system",
+          content: "You are an expert at writing professional emails. Write ONLY the email body content - do NOT include a subject line. Start with a greeting and end with an appropriate closing. Keep it concise and well-structured."
+        },
+        {
+          role: "user",
+          content: `User's request: "${userQuery}"\n\nResearch content to include:\n${researchContent}\n\nWrite a professional email body that addresses the user's request and includes the relevant information. Do NOT include "Subject:" - just the email body.`
+        }
+      ],
+      max_tokens: 500,
+      temperature: 0.7,
+    }),
+  });
+
+  if (!response.ok) {
+    console.error("Email content generation failed:", await response.text());
+    return "I wanted to share some information with you based on your request. Please let me know if you need any further details.";
+  }
+
+  const data = await response.json();
+  return data.choices[0]?.message?.content?.trim() || "I wanted to share some information with you based on your request. Please let me know if you need any further details.";
+}
+
+// Helper: Generate email subject line using OpenAI
+async function generateEmailSubject(
+  userQuery: string,
+  emailBody: string,
+  openAiKey: string
+): Promise<string> {
+  const response = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${openAiKey}`,
+    },
+    body: JSON.stringify({
+      model: "gpt-4o-mini",
+      messages: [
+        {
+          role: "system",
+          content: "You are an expert at writing clear, professional email subject lines. Generate a concise, specific subject line (max 60 characters) that accurately describes the email content."
+        },
+        {
+          role: "user",
+          content: `User's request: "${userQuery}"\n\nEmail content:\n${emailBody.substring(0, 500)}\n\nGenerate ONLY the subject line, no quotes or extra text.`
+        }
+      ],
+      max_tokens: 30,
+      temperature: 0.7,
+    }),
+  });
+
+  const data = await response.json();
+  return data.choices[0]?.message?.content?.trim() || "Message from QuickHand";
+}
+
 // Main handler
 serve(async (req) => {
   // Handle CORS preflight
@@ -233,9 +331,13 @@ serve(async (req) => {
     const userQuery = lastUserMessage.content;
     let citations: Citation[] | undefined;
     let contextPrompt = "";
+    
+    // Check if this is an email drafting request
+    const lowerQuery = userQuery.toLowerCase();
+    const isEmailRequest = lowerQuery.includes("email") || lowerQuery.includes("draft") || lowerQuery.includes("gmail") || lowerQuery.includes("send");
 
-    // Check if web search is needed
-    if (exaApiKey && needsWebSearch(userQuery)) {
+    // Check if web search is needed (but skip for email drafting)
+    if (exaApiKey && needsWebSearch(userQuery) && !isEmailRequest) {
       console.log("Performing web search for:", userQuery);
       const citationLimit = getCitationLimit(userQuery);
       console.log(`Citation limit for this query: ${citationLimit}`);
@@ -263,6 +365,9 @@ serve(async (req) => {
           `7. The user's actions (save to Notion, draft email, etc.) will be handled automatically with action buttons`;
       }
     }
+    
+    // For email requests, we want the LLM to provide a summary, not write the email directly
+    // The email content will be generated separately for the modal preview
 
     // Prepare messages for OpenAI
     const openAiMessages = history
@@ -280,7 +385,6 @@ serve(async (req) => {
     // Detect if we should suggest actions
     let plan: ActionPlan[] | undefined;
     const lowerReply = assistantReply.toLowerCase();
-    const lowerQuery = userQuery.toLowerCase();
 
     // Enhanced heuristics for action suggestions - can detect MULTIPLE actions
     const actions: ActionPlan[] = [];
@@ -303,15 +407,25 @@ serve(async (req) => {
     }
     
     // Check for Gmail action (independent check, not else-if)
-    if (lowerQuery.includes("email") || lowerQuery.includes("draft") || lowerQuery.includes("gmail") || lowerQuery.includes("send")) {
+    if (isEmailRequest) {
+      // Generate email content specifically for the email draft
+      const emailContent = await generateEmailContent(userQuery, assistantReply, openAiKey);
+      
+      // Generate subject line using LLM
+      const generatedSubject = await generateEmailSubject(userQuery, emailContent, openAiKey);
+      
+      // Format email body as HTML for Gmail API
+      const formattedBodyHTML = formatEmailBody(emailContent);
+      
       actions.push({
         id: `action-gmail-${Date.now()}`,
         action: "gmail",
         label: "Draft Email",
         params: { 
           to: "", // User will fill this in the checkpoint modal
-          subject: `Re: ${userQuery.substring(0, 50)}`,
-          body: assistantReply 
+          subject: generatedSubject,
+          bodyText: emailContent, // Plain text for preview
+          bodyHTML: formattedBodyHTML // HTML for Gmail API
         },
       });
     }

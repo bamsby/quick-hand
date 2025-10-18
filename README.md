@@ -8,7 +8,11 @@ A **mobile-first, role-aware AI agent** built with Expo (React Native + TypeScri
 # Install dependencies
 npm install
 
-# Set up Supabase and deploy edge function
+# Set up environment variables
+cp env.example .env
+# Edit .env with your Supabase and OAuth credentials
+
+# Set up Supabase and deploy edge functions
 # See SETUP_GUIDE.md for detailed instructions
 
 # Start development server
@@ -21,6 +25,16 @@ npm run web        # Web browser
 ```
 
 **First time setup?** Follow the [Setup Guide](./SETUP_GUIDE.md) for complete instructions.
+
+## 🔐 Authentication
+
+QuickHand now requires user authentication. Users must sign in with email/password before accessing the app.
+
+**User Flow:**
+1. **App Launch** → Authentication screen (sign in/sign up)
+2. **After Auth** → Role selection screen
+3. **Chat** → User profile shown in header with sign-out option
+4. **Integrations** → Notion/Gmail connections are remembered per user
 
 ## 📁 Project Structure
 
@@ -50,16 +64,28 @@ npm run web        # Web browser
 
 ## 🔧 Environment Setup
 
-Create a `.env` file in the root directory:
+Copy the example environment file and fill in your credentials:
 
 ```bash
-# Client-side (safe to expose in app bundle)
+cp env.example .env
+```
+
+Edit `.env` with your actual values:
+
+```bash
+# Supabase Configuration (Required)
 EXPO_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
-EXPO_PUBLIC_SUPABASE_ANON_KEY=your-anon-key-here
+EXPO_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
+
+# OAuth Client IDs (Public - Safe to expose in app bundle)
+EXPO_PUBLIC_NOTION_CLIENT_ID=your-notion-client-id
+EXPO_PUBLIC_GMAIL_CLIENT_ID=your-gmail-client-id.apps.googleusercontent.com
 ```
 
 **Server-side secrets** (set via Supabase CLI):
 ```powershell
+supabase secrets set NOTION_CLIENT_SECRET=your-notion-secret
+supabase secrets set GMAIL_CLIENT_SECRET=your-gmail-secret
 supabase secrets set OPENAI_API_KEY=sk-...
 supabase secrets set EXA_API_KEY=...
 ```
@@ -72,12 +98,15 @@ See [SETUP_GUIDE.md](./SETUP_GUIDE.md) for complete setup instructions.
 
 ### ✅ Fully Implemented
 
-- **App Launch:** Animated splash screen with role preset preloading
+- **Authentication:** Email/password sign-in with persistent sessions using Expo SecureStore
+- **App Launch:** Animated splash screen with authentication check
 - **Role selector:** 7 roles (Founder, Student, Teacher, Creator, Property Agent, Product Manager, General)
 - **Chat with AI:** Full OpenAI GPT-4o-mini integration via Supabase Edge Function
 - **Web Search:** Exa API integration for grounded answers with citations
 - **Citations UI:** Inline `[1]`, `[2]` citations with expandable source cards
 - **Action Proposals:** AI suggests actions (Save to Notion, Draft in Gmail) with checkpoint confirmation
+- **User Profile:** Email display and sign-out functionality in chat header
+- **Integration Status:** Auto-loads and displays Notion/Gmail connection status
 - **Loading States:** Smooth loading indicators and disabled states
 
 ### 🚧 Partially Implemented (Stubbed)
@@ -101,17 +130,25 @@ See [SETUP_GUIDE.md](./SETUP_GUIDE.md) for complete setup instructions.
 
 ### 🎨 App Launch Flow
 1. User opens app → sees animated QuickHand splash screen (⚡👆)
-2. App preloads role presets from `lib/roles.ts` (7 roles validated)
-3. Minimum 1.5s splash duration ensures smooth UX
-4. Transitions to role selector screen
+2. App checks authentication status using Expo SecureStore
+3. If not authenticated → shows sign-in/sign-up modal
+4. If authenticated → preloads role presets from `lib/roles.ts` (7 roles validated)
+5. Minimum 1.5s splash duration ensures smooth UX
+6. Transitions to role selector screen with user profile
 
 **See** `assets/README.md` for logo asset generation instructions.
 
 ## 🧪 Manual Testing Checklist
 
+- [x] **Authentication:** Sign up with new email/password
+- [x] **Authentication:** Sign in with existing credentials
+- [x] **Session persistence:** App remembers user after restart
 - [x] **App launch:** Splash screen displays with animation
 - [x] **Role presets:** 7 roles load successfully (check console logs)
 - [x] **Role select:** Tap each role pill, chat screen opens with correct system prompt
+- [x] **User profile:** Email displayed in chat header
+- [x] **Sign out:** Sign out button works and returns to auth screen
+- [x] **Integration status:** Notion/Gmail connection status auto-loads
 - [x] **Chat interaction:** Messages display correctly, OpenAI responds
 - [x] **Web search:** Queries like "latest AI hackathon prizes" trigger Exa search
 - [x] **Citations:** Inline `[1]`, `[2]` displayed, sources expandable, tap to open URL

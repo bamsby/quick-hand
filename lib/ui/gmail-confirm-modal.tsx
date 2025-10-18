@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { View, Text, TextInput, Pressable, StyleSheet } from "react-native";
+import { View, Text, TextInput, Pressable, StyleSheet, ScrollView } from "react-native";
 import { BaseModal } from "./modal";
 
 interface GmailConfirmModalProps {
@@ -8,6 +8,7 @@ interface GmailConfirmModalProps {
   onConfirm: (recipients: string) => void;
   initialRecipients: string;
   subject: string;
+  body: string;
 }
 
 export function GmailConfirmModal({
@@ -16,6 +17,7 @@ export function GmailConfirmModal({
   onConfirm,
   initialRecipients,
   subject,
+  body,
 }: GmailConfirmModalProps) {
   const [recipients, setRecipients] = useState(initialRecipients);
 
@@ -43,6 +45,11 @@ export function GmailConfirmModal({
         <View style={styles.previewBox}>
           <Text style={styles.previewText}>{subject}</Text>
         </View>
+
+        <Text style={styles.label}>Message</Text>
+        <ScrollView style={styles.bodyPreview} nestedScrollEnabled>
+          <Text style={styles.bodyPreviewText}>{body}</Text>
+        </ScrollView>
 
         <View style={styles.buttonRow}>
           <Pressable style={[styles.button, styles.cancelButton]} onPress={onClose}>
@@ -93,6 +100,19 @@ const styles = StyleSheet.create({
   previewText: {
     fontSize: 13,
     color: "#666",
+  },
+  bodyPreview: {
+    maxHeight: 150,
+    borderWidth: 1,
+    borderColor: "#ddd",
+    borderRadius: 8,
+    padding: 12,
+    backgroundColor: "#f9f9f9",
+  },
+  bodyPreviewText: {
+    fontSize: 13,
+    color: "#444",
+    lineHeight: 20,
   },
   buttonRow: {
     flexDirection: "row",

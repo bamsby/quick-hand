@@ -1,15 +1,18 @@
 import { useLocalSearchParams } from "expo-router";
 import { useState, useRef, useEffect } from "react";
-import { View, Text, TextInput, Pressable, StyleSheet, ScrollView, Linking, ActivityIndicator, KeyboardAvoidingView, Platform } from "react-native";
+import { View, Text, TextInput, Pressable, StyleSheet, ScrollView, Linking, ActivityIndicator, KeyboardAvoidingView, Platform, Alert } from "react-native";
 import { ROLE_PRESETS, type RoleKey } from "../lib/roles";
-import { runAgent, notionCreatePage, gmailCreateDraft, checkNotionConnection } from "../lib/api";
+import { runAgent, notionCreatePage, gmailCreateDraft, checkNotionConnection, checkGmailConnection } from "../lib/api";
 import type { Message, ActionPlan, IntegrationStatus } from "../lib/types";
 import { ToastProvider, useToast } from "../lib/ui/toast";
 import { NotionConfirmModal } from "../lib/ui/notion-confirm-modal";
 import { NotionConnectModal } from "../lib/ui/notion-connect-modal";
 import { GmailConfirmModal } from "../lib/ui/gmail-confirm-modal";
+import { GmailConnectModal } from "../lib/ui/gmail-connect-modal";
 import { CheckpointModal } from "../lib/ui/checkpoint-modal";
 import { initiateNotionOAuth } from "../lib/notion-oauth";
+import { initiateGmailOAuth } from "../lib/gmail-oauth";
+import { getCurrentUser, signOut, getIntegrationStatus } from "../lib/auth-helpers";
 
 interface PendingAction {
   messageId: string;
@@ -28,10 +31,15 @@ function ChatContent() {
   const scrollRef = useRef<ScrollView>(null);
   const { showToast } = useToast();
 
+  // User and auth states
+  const [user, setUser] = useState<any>(null);
+  const [signingOut, setSigningOut] = useState(false);
+
   // Modal states
   const [notionModalVisible, setNotionModalVisible] = useState(false);
   const [notionConnectModalVisible, setNotionConnectModalVisible] = useState(false);
   const [gmailModalVisible, setGmailModalVisible] = useState(false);
+  const [gmailConnectModalVisible, setGmailConnectModalVisible] = useState(false);
   const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
   
   // Checkpoint modal states
@@ -41,10 +49,107 @@ function ChatContent() {
 
   // Integration status
   const [notionConnectionStatus, setNotionConnectionStatus] = useState<IntegrationStatus | null>(null);
+  const [gmailConnectionStatus, setGmailConnectionStatus] = useState<IntegrationStatus | null>(null);
 
   useEffect(() => {
     scrollRef.current?.scrollToEnd({ animated: true });
   }, [messages]);
+
+  // Load user data and integration status on mount
+  useEffect(() => {
+    async function loadUserData() {
+      try {
+        const currentUser = await getCurrentUser();
+        setUser(currentUser);
+        
+        // Load integration status
+        const [notionStatus, gmailStatus] = await Promise.all([
+          getIntegrationStatus('notion'),
+          getIntegrationStatus('gmail')
+        ]);
+        
+        setNotionConnectionStatus(notionStatus);
+        setGmailConnectionStatus(gmailStatus);
+      } catch (error) {
+        console.error("Error loading user data:", error);
+      }
+    }
+    
+    loadUserData();
+  }, []);
+
+  const handleSignOut = async () => {
+    console.log("handleSignOut called");
+    
+    // For web testing, let's skip the alert and go straight to sign out
+    if (Platform.OS === 'web') {
+      console.log("Web platform detected, proceeding with sign out...");
+      setSigningOut(true);
+      try {
+        console.log("Starting sign out process...");
+        const result = await signOut();
+        console.log("Sign out result:", result);
+        
+        if (result.success) {
+          console.log("Sign out successful, clearing user state...");
+          setUser(null);
+          setNotionConnectionStatus(null);
+          setGmailConnectionStatus(null);
+          showToast("Signed out successfully", "success");
+          
+          // Force a page reload to trigger authentication check
+          setTimeout(() => {
+            window.location?.reload?.();
+          }, 1000);
+        } else {
+          console.error("Sign out failed:", result.error);
+          showToast(result.error || "Failed to sign out", "error");
+        }
+      } catch (error) {
+        console.error("Sign out error:", error);
+        showToast("Something went wrong. Please try again.", "error");
+      } finally {
+        setSigningOut(false);
+      }
+    } else {
+      // Use Alert for mobile
+      Alert.alert(
+        "Sign Out",
+        "Are you sure you want to sign out? You'll need to sign in again to use the app.",
+        [
+          { text: "Cancel", style: "cancel" },
+          {
+            text: "Sign Out",
+            style: "destructive",
+            onPress: async () => {
+              setSigningOut(true);
+              try {
+                console.log("Starting sign out process...");
+                const result = await signOut();
+                console.log("Sign out result:", result);
+                
+                if (result.success) {
+                  console.log("Sign out successful, clearing user state...");
+                  setUser(null);
+                  setNotionConnectionStatus(null);
+                  setGmailConnectionStatus(null);
+                  showToast("Signed out successfully", "success");
+                } else {
+                  console.error("Sign out failed:", result.error);
+                  showToast(result.error || "Failed to sign out", "error");
+                }
+              } catch (error) {
+                console.error("Sign out error:", error);
+                showToast("Something went wrong. Please try again.", "error");
+              } finally {
+                setSigningOut(false);
+              }
+            }
+          }
+        ]
+      );
+    }
+  };
 
   const onSend = async () => {
     if (!input.trim() || loading) return;
@@ -82,7 +187,17 @@ function ChatContent() {
         setNotionModalVisible(true);
       }
     } else if (action.action === "gmail") {
-      setGmailModalVisible(true);
+      // Check Gmail connection first
+      const status = await checkGmailConnection();
+      setGmailConnectionStatus(status);
+      
+      if (!status.connected) {
+        // Show connection modal
+        setGmailConnectModalVisible(true);
+      } else {
+        // Already connected, show confirm modal
+        setGmailModalVisible(true);
+      }
     }
   };
 
@@ -107,6 +222,32 @@ function ChatContent() {
     } else {
       showToast(
         result.error || "Failed to connect to Notion. Please try again.",
+        "error"
+      );
+    }
+  };
+
+  const handleGmailConnect = async () => {
+    const result = await initiateGmailOAuth();
+    
+    if (result.success) {
+      setGmailConnectModalVisible(false);
+      setGmailConnectionStatus({
+        connected: true,
+        workspaceName: result.email,
+      });
+      showToast(
+        `Connected to ${result.email || "Gmail"}!`,
+        "success"
+      );
+      
+      // After successful connection, show the confirm modal
+      if (pendingAction) {
+        setGmailModalVisible(true);
+      }
+    } else {
+      showToast(
+        result.error || "Failed to connect to Gmail. Please try again.",
         "error"
       );
     }
@@ -206,7 +347,7 @@ function ChatContent() {
       const { threadUrl } = await gmailCreateDraft(
         recipients,
         action.params?.subject || "",
-        action.params?.body || ""
+        action.params?.bodyHTML || action.params?.body || ""
       );
 
       // Update action status to done
@@ -276,14 +417,30 @@ function ChatContent() {
     const message = messages.find((m) => m.id === messageId);
     if (!message || !message.plan) return;
 
-    // Check if any Notion actions need connection
+    // Check all auth requirements together
     const hasNotionActions = editedActions.some((a) => a.action === "notion" && a.status === "pending");
+    const hasGmailActions = editedActions.some((a) => a.action === "gmail" && a.status === "pending");
+    
+    const missingConnections: string[] = [];
+    
     if (hasNotionActions) {
-      const status = await checkNotionConnection();
-      if (!status.connected) {
-        showToast("Please connect Notion first to save content.", "error");
-        return;
+      const notionStatus = await checkNotionConnection();
+      if (!notionStatus.connected) {
+        missingConnections.push("Notion");
       }
+    }
+    
+    if (hasGmailActions) {
+      const gmailStatus = await checkGmailConnection();
+      if (!gmailStatus.connected) {
+        missingConnections.push("Gmail");
+      }
+    }
+    
+    if (missingConnections.length > 0) {
+      const serviceList = missingConnections.join(" and ");
+      showToast(`Please connect ${serviceList} first to run all actions.`, "error");
+      return;
     }
 
     // Use edited actions from the modal
@@ -322,7 +479,7 @@ function ChatContent() {
           const { threadUrl } = await gmailCreateDraft(
             action.params?.to || "your.email@example.com",
             action.params?.subject || "",
-            action.params?.body || ""
+            action.params?.bodyHTML || action.params?.body || ""
           );
           result = threadUrl;
         }
@@ -383,7 +540,40 @@ function ChatContent() {
       keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 0}
     >
       <View style={{ flex: 1 }}>
-        <View style={styles.header}><Text style={styles.title}>{preset.label} Mode</Text></View>
+        <View style={styles.header}>
+          <View style={styles.headerTop}>
+            <Text style={styles.title}>{preset.label} Mode</Text>
+            <Pressable 
+              style={[styles.signOutButton, signingOut && styles.signOutButtonDisabled]}
+              onPress={() => {
+                console.log("Sign out button pressed!");
+                handleSignOut();
+              }}
+              disabled={signingOut}
+            >
+              {signingOut ? (
+                <ActivityIndicator size="small" color="#ef4444" />
+              ) : (
+                <Text style={styles.signOutText}>Sign Out</Text>
+              )}
+            </Pressable>
+          </View>
+          {user?.email && (
+            <Text style={styles.userEmail}>{user.email}</Text>
+          )}
+          <View style={styles.integrationStatus}>
+            {notionConnectionStatus?.connected && (
+              <View style={styles.statusBadge}>
+                <Text style={styles.statusText}>✓ Notion</Text>
+              </View>
+            )}
+            {gmailConnectionStatus?.connected && (
+              <View style={styles.statusBadge}>
+                <Text style={styles.statusText}>✓ Gmail</Text>
+              </View>
+            )}
+          </View>
+        </View>
         <ScrollView 
           ref={scrollRef} 
           style={{ flex: 1, padding: 16 }}
@@ -486,9 +676,9 @@ function ChatContent() {
             placeholder="Ask QuickHand…" 
             style={styles.input}
             editable={!loading}
-            onSubmitEditing={onSend}
-            returnKeyType="send"
-            blurOnSubmit={false}
+            multiline
+            textAlignVertical="top"
+            maxLength={1000}
           />
           <Pressable onPress={onSend} style={[styles.send, loading && styles.sendDisabled]} disabled={loading}>
             <Text style={{ color:"white" }}>Send</Text>
@@ -503,6 +693,15 @@ function ChatContent() {
             setPendingAction(null);
           }}
           onConnect={handleNotionConnect}
+        />
+
+        <GmailConnectModal
+          visible={gmailConnectModalVisible}
+          onClose={() => {
+            setGmailConnectModalVisible(false);
+            setPendingAction(null);
+          }}
+          onConnect={handleGmailConnect}
         />
 
         <NotionConfirmModal
@@ -526,6 +725,7 @@ function ChatContent() {
           onConfirm={confirmGmailAction}
           initialRecipients={pendingAction?.action.params?.to || "your.email@example.com"}
           subject={pendingAction?.action.params?.subject || ""}
+          body={pendingAction?.action.params?.bodyText || ""}
         />
 
         <CheckpointModal
@@ -552,8 +752,54 @@ export default function Chat() {
 }
 
 const styles = StyleSheet.create({
-  header:{ padding:16, borderBottomWidth:1, borderColor:"#eee" },
+  header:{ 
+    padding:16, 
+    borderBottomWidth:1, 
+    borderColor:"#eee",
+    backgroundColor: "#fafafa"
+  },
+  headerTop: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 8,
+  },
   title:{ fontSize:18, fontWeight:"600" },
+  signOutButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: "#ef4444",
+  },
+  signOutButtonDisabled: {
+    opacity: 0.5,
+  },
+  signOutText: {
+    color: "#ef4444",
+    fontSize: 14,
+    fontWeight: "500",
+  },
+  userEmail: {
+    fontSize: 14,
+    color: "#666",
+    marginBottom: 8,
+  },
+  integrationStatus: {
+    flexDirection: "row",
+    gap: 8,
+  },
+  statusBadge: {
+    backgroundColor: "#10b981",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  statusText: {
+    color: "#fff",
+    fontSize: 12,
+    fontWeight: "500",
+  },
   bubble:{ marginBottom:10, padding:12, borderRadius:12, backgroundColor:"#f7f7f7" },
   user:{ alignSelf:"flex-end", backgroundColor:"#def7f1" },
   assistant:{ alignSelf:"flex-start" },
@@ -677,9 +923,9 @@ const styles = StyleSheet.create({
     color: "#666",
     fontSize: 14,
   },
-  inputBar:{ flexDirection:"row", padding:12, borderTopWidth:1, borderColor:"#eee" },
-  input:{ flex:1, padding:12, backgroundColor:"#f0f0f0", borderRadius:8, marginRight:8 },
-  send:{ paddingHorizontal:16, justifyContent:"center", borderRadius:8, backgroundColor:"#16E0B4" },
+  inputBar:{ flexDirection:"row", padding:12, borderTopWidth:1, borderColor:"#eee", alignItems:"flex-end" },
+  input:{ flex:1, padding:12, backgroundColor:"#f0f0f0", borderRadius:8, marginRight:8, minHeight:44, maxHeight:120 },
+  send:{ paddingHorizontal:16, paddingVertical:12, justifyContent:"center", borderRadius:8, backgroundColor:"#16E0B4" },
   sendDisabled: { opacity: 0.5 },
 });
 

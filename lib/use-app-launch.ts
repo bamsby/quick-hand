@@ -1,13 +1,18 @@
 import { useEffect, useState } from "react";
 import { ROLE_PRESETS } from "./roles";
 import { supabase } from "./supabase";
+import { isAuthenticated } from "./auth-helpers";
 
 /**
- * Hook to manage app launch state and preload role presets.
- * Returns true when app is ready to show main content.
+ * Hook to manage app launch state and authentication.
+ * Returns { isReady, isAuthenticated } when app is ready to show content.
  */
-export function useAppLaunch(minSplashDuration: number = 1500): boolean {
+export function useAppLaunch(minSplashDuration: number = 1500, authTrigger: number = 0): { 
+  isReady: boolean; 
+  isAuthenticated: boolean; 
+} {
   const [isReady, setIsReady] = useState(false);
+  const [isAuth, setIsAuth] = useState(false);
 
   useEffect(() => {
     async function prepare() {
@@ -22,18 +27,14 @@ export function useAppLaunch(minSplashDuration: number = 1500): boolean {
           console.log(`✓ Loaded ${roleCount} role presets`);
         }
 
-        // Initialize anonymous authentication if no session exists
-        const { data: { session } } = await supabase.auth.getSession();
-        if (!session) {
-          console.log("No session found, signing in anonymously...");
-          const { data, error } = await supabase.auth.signInAnonymously();
-          if (error) {
-            console.error("Anonymous sign-in error:", error);
-          } else {
-            console.log("✓ Anonymous user created:", data.user?.id);
-          }
+        // Check authentication status
+        const authenticated = await isAuthenticated();
+        setIsAuth(authenticated);
+        
+        if (authenticated) {
+          console.log("✓ User is authenticated");
         } else {
-          console.log("✓ Existing session found:", session.user.id);
+          console.log("User needs to authenticate");
         }
 
         // You can add more preload tasks here:
@@ -57,8 +58,8 @@ export function useAppLaunch(minSplashDuration: number = 1500): boolean {
     }
 
     prepare();
-  }, [minSplashDuration]);
+  }, [minSplashDuration, authTrigger]);
 
-  return isReady;
+  return { isReady, isAuthenticated: isAuth };
 }
 

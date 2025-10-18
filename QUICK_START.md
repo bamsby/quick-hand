@@ -8,17 +8,31 @@
 - Exa API for web search with citations
 - Action proposals (Save to Notion, Draft in Gmail) with confirmation UI
 
+✅ **User Authentication System:**
+- Email/password sign-in and sign-up
+- Persistent sessions using Expo SecureStore
+- User profile display in chat header
+- Integration status auto-loading (Notion/Gmail connections remembered)
+
 ## 🚀 Setup in 5 Minutes
 
 ### 1. Create Supabase Project
 
 1. Go to [supabase.com](https://supabase.com) and sign in
 2. Create new project, copy URL and anon key
-3. Add to `.env`:
+3. Copy environment template and add your credentials:
+
+```powershell
+cp env.example .env
+```
+
+Edit `.env` with your Supabase credentials:
 
 ```env
 EXPO_PUBLIC_SUPABASE_URL=https://xxxxx.supabase.co
 EXPO_PUBLIC_SUPABASE_ANON_KEY=eyJhbGc...
+EXPO_PUBLIC_NOTION_CLIENT_ID=your-notion-client-id
+EXPO_PUBLIC_GMAIL_CLIENT_ID=your-gmail-client-id.apps.googleusercontent.com
 ```
 
 ### 2. Install Supabase CLI & Set Secrets
@@ -33,6 +47,8 @@ supabase link --project-ref your-project-ref
 # Set API keys (server-side only)
 supabase secrets set OPENAI_API_KEY=sk-your-key-here
 supabase secrets set EXA_API_KEY=your-exa-key  # Optional
+supabase secrets set NOTION_CLIENT_SECRET=your-notion-secret
+supabase secrets set GMAIL_CLIENT_SECRET=your-gmail-secret
 ```
 
 ### 3. Deploy Edge Function
@@ -53,8 +69,15 @@ npm start
 
 That's it! 🎉
 
-## 📱 Test the Chat
+## 📱 Test the App
 
+### Authentication Flow
+1. **First launch:** You'll see the sign-in/sign-up screen
+2. **Sign up:** Create account with email/password
+3. **Sign in:** Use existing credentials
+4. **Session persistence:** App remembers you after restart
+
+### Chat Testing
 Try these queries:
 
 1. **Simple question:** "What is React Native?"
@@ -62,9 +85,12 @@ Try these queries:
 3. **Action trigger:** "Create a summary and save to Notion"
 
 You should see:
+- User email in chat header
+- Integration status badges (✓ Notion, ✓ Gmail)
 - AI responses in chat bubbles
 - Citations `[1]`, `[2]` with expandable sources
 - Action buttons for Notion/Gmail (currently stubbed)
+- Sign out button in header
 
 ## 🐛 Common Issues
 
@@ -109,7 +135,7 @@ supabase secrets set OPENAI_API_KEY=sk-your-actual-key
 - [ ] Connect Smithery MCP for real Gmail integration
 - [ ] Add voice input/output
 - [ ] Persist chat history in Supabase database
-- [ ] Add user authentication
+- [x] Add user authentication ✅
 
 ## 💡 Tips
 
