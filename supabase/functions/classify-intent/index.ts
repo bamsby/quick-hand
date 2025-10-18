@@ -47,7 +47,7 @@ async function classifyIntent(
       messages: [
         {
           role: "system",
-          content: "You are an intent classifier. Analyze the user's query and classify it into one of these intents: info_lookup (seeking information), summarize (asking for summary), email_draft (wanting to draft email), action_request (asking to perform action), chitchat (casual conversation). Extract the main topic and determine if location or email context is needed."
+          content: "You are an intent classifier. Analyze the user's query and classify it into one of these intents: info_lookup (seeking information), summarize (asking for summary), email_draft (wanting to draft email), action_request (asking to perform action), chitchat (casual conversation). Extract the main topic and determine if location or email context is needed. IMPORTANT: If the user mentions a specific location in their query (like 'Singapore', 'New York', 'London', etc.), set needs_location to false since the location is already provided."
         },
         {
           role: "user",

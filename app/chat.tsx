@@ -676,11 +676,17 @@ function ChatContent() {
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="on-drag"
         >
-          {messages.filter(m => m.role !== "system").map((m) => (
-            <View key={m.id}>
-              <View style={[styles.bubble, m.role==="user"?styles.user:styles.assistant]}>
-                <Text style={m.role==="user"?styles.userText:styles.assistantText}>{m.content}</Text>
-              </View>
+          {messages.filter(m => m.role !== "system").map((m, index) => {
+            // Use message ID if available, otherwise fallback to index
+            const messageKey = m.id || `message-${index}`;
+            return (
+            <View key={messageKey}>
+              {/* Only show main content if no structured content, or if structured content is different */}
+              {(!m.structured?.bullets || m.structured.bullets.length === 0) && (
+                <View style={[styles.bubble, m.role==="user"?styles.user:styles.assistant]}>
+                  <Text style={m.role==="user"?styles.userText:styles.assistantText}>{m.content}</Text>
+                </View>
+              )}
               
               {/* Show structured answer if available and different from main content */}
               {m.structured?.answer && m.structured.answer !== m.content && (
@@ -752,50 +758,57 @@ function ChatContent() {
 
                     if (shouldShowCheckpoint) {
                       return (
-                        <Pressable
-                          style={styles.reviewPlanButton}
-                          onPress={() => openCheckpointModal(m.id)}
-                        >
-                          <Text style={styles.reviewPlanButtonText}>Review Plan</Text>
-                        </Pressable>
+                        <View key="checkpoint-container">
+                          <Pressable
+                            style={styles.reviewPlanButton}
+                            onPress={() => openCheckpointModal(m.id)}
+                          >
+                            <Text style={styles.reviewPlanButtonText}>Review Plan</Text>
+                          </Pressable>
+                        </View>
                       );
                     }
 
-                    return m.plan!.map((action) => (
-                      <View key={action.id} style={styles.actionRow}>
-                        <Pressable
-                          style={[
-                            styles.actionButton,
-                            action.status === "done" && styles.actionDone,
-                            action.status === "error" && styles.actionError,
-                          ]}
-                          onPress={() => executeAction(m.id, action.id)}
-                          disabled={action.status === "running" || action.status === "done"}
-                        >
-                          {action.status === "running" ? (
-                            <ActivityIndicator size="small" color="#fff" />
-                          ) : (
-                            <Text style={styles.actionButtonText}>
-                              {action.status === "done" ? "✓ " : ""}
-                              {action.label}
-                            </Text>
-                          )}
-                        </Pressable>
-                        {action.status === "done" && action.result && (
-                          <Pressable onPress={() => Linking.openURL(action.result!)}>
-                            <Text style={styles.resultLink}>Open →</Text>
-                          </Pressable>
-                        )}
-                        {action.status === "error" && (
-                          <Text style={styles.errorText}>Failed</Text>
-                        )}
-                      </View>
-                    ));
+                    return (
+                      <>
+                        {m.plan!.map((action) => (
+                          <View key={action.id} style={styles.actionRow}>
+                            <Pressable
+                              style={[
+                                styles.actionButton,
+                                action.status === "done" && styles.actionDone,
+                                action.status === "error" && styles.actionError,
+                              ]}
+                              onPress={() => executeAction(m.id, action.id)}
+                              disabled={action.status === "running" || action.status === "done"}
+                            >
+                              {action.status === "running" ? (
+                                <ActivityIndicator size="small" color="#fff" />
+                              ) : (
+                                <Text style={styles.actionButtonText}>
+                                  {action.status === "done" ? "✓ " : ""}
+                                  {action.label}
+                                </Text>
+                              )}
+                            </Pressable>
+                            {action.status === "done" && action.result && (
+                              <Pressable onPress={() => Linking.openURL(action.result!)}>
+                                <Text style={styles.resultLink}>Open →</Text>
+                              </Pressable>
+                            )}
+                            {action.status === "error" && (
+                              <Text style={styles.errorText}>Failed</Text>
+                            )}
+                          </View>
+                        ))}
+                      </>
+                    );
                   })()}
                 </View>
               )}
             </View>
-          ))}
+            );
+          })}
           {loading && (
             <View style={styles.loadingBubble}>
               <ActivityIndicator size="small" color="#16E0B4" />
@@ -1099,17 +1112,20 @@ const styles = StyleSheet.create({
     backgroundColor: "#FFFFFF",
     borderWidth: 1,
     borderColor: "#E2E8F0",
-    maxWidth: "90%",
+    maxWidth: "95%",
+    flexShrink: 1,
   },
   userText: {
     color: "#FFFFFF",
     fontSize: 16,
     lineHeight: 22,
+    flexWrap: "wrap",
   },
   assistantText: {
     color: "#1E293B",
     fontSize: 16,
     lineHeight: 22,
+    flexWrap: "wrap",
   },
   citations: {
     marginTop: 12,
@@ -1220,6 +1236,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: "#1E293B",
     lineHeight: 20,
+    flexWrap: "wrap",
   },
   followups: {
     marginTop: 12,

@@ -68,13 +68,13 @@ const corsHeaders = {
 const TOOL_DEFINITIONS = [
   {
     name: "exa_search",
-    description: "Search the web for information using Exa API. Use when user needs current information or facts.",
+    description: "Search the web for information using Exa API. Use when user needs current information or facts. IMPORTANT: For recent events, include terms like '2024', '2025', 'latest', 'upcoming', 'recent' in your search query to get the most current information.",
     parameters: {
       type: "object",
       properties: {
         query: {
           type: "string",
-          description: "Search query"
+          description: "Search query - include terms like '2024', '2025', 'latest', 'upcoming', 'recent' for current information"
         },
         num_results: {
           type: "number",
@@ -190,7 +190,23 @@ async function searchMemories(userId: string, role: string, query: string, mem0A
 
 // Helper: Call Exa API for web search
 async function searchExa(query: string, exaApiKey: string, limit: number): Promise<Citation[]> {
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  
   try {
+    // Add timeout to prevent hanging
+    const controller = new AbortController();
+    timeoutId = setTimeout(() => {
+      console.log("Exa API timeout - aborting request");
+      controller.abort();
+    }, 8000); // Reduced to 8 seconds for faster failure
+    
+    // Get yesterday's date to avoid searching for today's content that might not exist
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    const endDate = yesterday.toISOString().split('T')[0];
+    
+    console.log("Exa API request:", { query, limit, endDate });
+    
     const response = await fetch("https://api.exa.ai/search", {
       method: "POST",
       headers: {
@@ -201,26 +217,49 @@ async function searchExa(query: string, exaApiKey: string, limit: number): Promi
         query,
         numResults: limit,
         type: "auto",
+        useAutoprompt: false, // Disable autoprompt to reduce processing time
         contents: {
           text: { maxCharacters: 500 },
         },
+        // Use a more conservative date range
+        startCrawlDate: "2023-01-01",
+        endCrawlDate: endDate,
       }),
+      signal: controller.signal,
     });
+    
+    // Clear timeout immediately after response
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+      timeoutId = undefined;
+    }
 
     if (!response.ok) {
-      console.error("Exa API error:", await response.text());
+      const errorText = await response.text();
+      console.error("Exa API error:", response.status, errorText);
       return [];
     }
 
     const data = await response.json();
+    console.log("Exa API success:", { resultCount: data.results?.length || 0 });
+    
     return (data.results || []).map((result: any, idx: number) => ({
       id: idx + 1,
       title: result.title || "Untitled",
       url: result.url || "",
       snippet: result.text || result.snippet || "",
     }));
-  } catch (error) {
-    console.error("Exa search failed:", error);
+  } catch (error: any) {
+    // Clear timeout in catch block too
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+    }
+    
+    if (error?.name === 'AbortError') {
+      console.error("Exa search timed out after 8 seconds");
+    } else {
+      console.error("Exa search failed:", error);
+    }
     return [];
   }
 }
@@ -240,31 +279,66 @@ async function callOpenAIWithTools(
     content: m.content
   }));
   
-  const response = await fetch("https://api.openai.com/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "Authorization": `Bearer ${openAiKey}`,
-    },
-    body: JSON.stringify({
-      model: "gpt-4o",
-      messages: messages,
-      tools: shouldOfferTools ? TOOL_DEFINITIONS.map(t => ({ type: "function", function: t })) : undefined,
-      tool_choice: shouldOfferTools ? "auto" : undefined,
-      temperature: 0.3,
-      max_tokens: 500,
-    }),
-  });
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  
+  try {
+    // Add timeout to prevent hanging
+    const controller = new AbortController();
+    timeoutId = setTimeout(() => {
+      console.log("OpenAI API timeout - aborting request");
+      controller.abort();
+    }, 12000); // Reduced to 12 seconds for faster failure
+    
+    console.log("OpenAI API request:", { shouldOfferTools, messageCount: messages.length });
+    
+    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${openAiKey}`,
+      },
+      body: JSON.stringify({
+        model: "gpt-4o",
+        messages: messages,
+        tools: shouldOfferTools ? TOOL_DEFINITIONS.map(t => ({ type: "function", function: t })) : undefined,
+        tool_choice: shouldOfferTools ? "auto" : undefined,
+        temperature: 0.3,
+        max_tokens: 500,
+      }),
+      signal: controller.signal,
+    });
+    
+    // Clear timeout immediately after response
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+      timeoutId = undefined;
+    }
 
-  if (!response.ok) {
-    const error = await response.text();
-    throw new Error(`OpenAI API error: ${error}`);
+    if (!response.ok) {
+      const error = await response.text();
+      throw new Error(`OpenAI API error: ${error}`);
+    }
+    
+    const data = await response.json();
+    const toolCalls = data.choices[0]?.message?.tool_calls || [];
+    
+    console.log("OpenAI API success:", { toolCallCount: toolCalls.length });
+    
+    return { toolCalls };
+  } catch (error: any) {
+    // Clear timeout in catch block too
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+    }
+    
+    if (error?.name === 'AbortError') {
+      console.error("OpenAI API timed out after 12 seconds");
+      throw new Error("OpenAI API request timed out");
+    } else {
+      console.error("OpenAI API failed:", error);
+      throw error;
+    }
   }
-  
-  const data = await response.json();
-  const toolCalls = data.choices[0]?.message?.tool_calls || [];
-  
-  return { toolCalls };
 }
 
 // Helper: Call Gemini 2.5 Pro (simplified - no JSON mode)
@@ -272,31 +346,68 @@ async function callGemini(
   prompt: string,
   geminiApiKey: string
 ): Promise<string> {
-  const response = await fetch(
-    "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:generateContent",
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-goog-api-key": geminiApiKey,
-      },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: {
-          temperature: 0.7,
-          maxOutputTokens: 1000,
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  
+  try {
+    // Add timeout to prevent hanging
+    const controller = new AbortController();
+    timeoutId = setTimeout(() => {
+      console.log("Gemini API timeout - aborting request");
+      controller.abort();
+    }, 15000); // 15 second timeout for Gemini
+    
+    console.log("Gemini API request:", { promptLength: prompt.length });
+    
+    const response = await fetch(
+      "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:generateContent",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-goog-api-key": geminiApiKey,
         },
-      }),
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: {
+            temperature: 0.7,
+            maxOutputTokens: 1000,
+          },
+        }),
+        signal: controller.signal,
+      }
+    );
+    
+    // Clear timeout immediately after response
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+      timeoutId = undefined;
     }
-  );
 
-  if (!response.ok) {
-    const error = await response.text();
-    throw new Error(`Gemini API error: ${error}`);
+    if (!response.ok) {
+      const error = await response.text();
+      throw new Error(`Gemini API error: ${error}`);
+    }
+
+    const data = await response.json();
+    const result = data.candidates?.[0]?.content?.parts?.[0]?.text || "No response generated.";
+    
+    console.log("Gemini API success:", { resultLength: result.length });
+    
+    return result;
+  } catch (error: any) {
+    // Clear timeout in catch block too
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+    }
+    
+    if (error?.name === 'AbortError') {
+      console.error("Gemini API timed out after 15 seconds");
+      throw new Error("Gemini API request timed out");
+    } else {
+      console.error("Gemini API failed:", error);
+      throw error;
+    }
   }
-
-  const data = await response.json();
-  return data.candidates?.[0]?.content?.parts?.[0]?.text || "No response generated.";
 }
 
 // Helper: Call classify-intent function
@@ -824,8 +935,8 @@ serve(async (req) => {
 
     // Generate structured answer if we have citations or actions
     let structured: StructuredAnswer | undefined;
-    if (citations.length > 0 || actions.length > 0) {
-      structured = await generateStructuredAnswer(userQuery, assistantReply, citations, openAiKey);
+    if ((citations && citations.length > 0) || actions.length > 0) {
+      structured = await generateStructuredAnswer(userQuery, assistantReply, citations || [], openAiKey);
     }
 
     // Store conversation in memory if user is authenticated and mem0 is available

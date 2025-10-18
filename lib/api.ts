@@ -34,12 +34,15 @@ interface AgentResponse {
 
 export async function runAgent(params: { role: RoleKey; history: Message[] }): Promise<Message> {
   try {
+    console.log("runAgent called with:", { role: params.role, historyLength: params.history.length });
     const { data, error } = await supabase.functions.invoke<AgentResponse>("plan", {
       body: {
         role: params.role,
         history: params.history,
       },
     });
+    
+    console.log("Supabase function response:", { data, error });
 
     if (error) {
       console.error("Supabase function error:", error);
@@ -48,6 +51,16 @@ export async function runAgent(params: { role: RoleKey; history: Message[] }): P
 
     if (!data) {
       throw new Error("No data received from server");
+    }
+
+    // Handle case where server needs more information
+    if ('needs_info' in data && data.needs_info) {
+      const message: Message = {
+        id: String(Date.now()),
+        role: "assistant",
+        content: data.question || "I need more information to help you.",
+      };
+      return message;
     }
 
     // Validate structured response if present
@@ -63,7 +76,7 @@ export async function runAgent(params: { role: RoleKey; history: Message[] }): P
 
     // Convert response to Message format
     const message: Message = {
-      id: data.id,
+      id: data.id || String(Date.now()), // Fallback ID if not provided
       role: "assistant",
       content: data.content,
       citations: data.citations,
