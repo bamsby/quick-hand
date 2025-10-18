@@ -602,10 +602,42 @@ function ChatContent() {
               <View style={[styles.bubble, m.role==="user"?styles.user:styles.assistant]}>
                 <Text style={m.role==="user"?styles.userText:styles.assistantText}>{m.content}</Text>
               </View>
-              {m.citations && m.citations.length > 0 && (
+              {/* Structured content - bullets */}
+              {m.structured?.bullets && m.structured.bullets.length > 0 && (
+                <View style={styles.bullets}>
+                  <Text style={styles.bulletsTitle}>Key Points:</Text>
+                  {m.structured.bullets.map((bullet, index) => (
+                    <View key={index} style={styles.bulletItem}>
+                      <Text style={styles.bulletDot}>•</Text>
+                      <Text style={styles.bulletText}>{bullet}</Text>
+                    </View>
+                  ))}
+                </View>
+              )}
+
+              {/* Followup questions */}
+              {m.structured?.followups && m.structured.followups.length > 0 && (
+                <View style={styles.followups}>
+                  <Text style={styles.followupsTitle}>Suggested Questions:</Text>
+                  <View style={styles.followupChips}>
+                    {m.structured.followups.map((followup, index) => (
+                      <Pressable
+                        key={index}
+                        style={styles.followupChip}
+                        onPress={() => setInput(followup)}
+                      >
+                        <Text style={styles.followupChipText}>{followup}</Text>
+                      </Pressable>
+                    ))}
+                  </View>
+                </View>
+              )}
+
+              {/* Citations - use structured citations if available, fallback to legacy */}
+              {((m.structured?.citations && m.structured.citations.length > 0) || (m.citations && m.citations.length > 0)) && (
                 <View style={styles.citations}>
                   <Text style={styles.citationsTitle}>Sources:</Text>
-                  {m.citations.map((citation) => (
+                  {(m.structured?.citations || m.citations || []).map((citation) => (
                     <Pressable
                       key={citation.id}
                       style={styles.citationCard}
@@ -1004,6 +1036,104 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: "#64748B",
     lineHeight: 18,
+  },
+  bullets: {
+    marginTop: 12,
+    marginBottom: 16,
+    padding: 16,
+    backgroundColor: "#F0F9FF",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#0EA5E9",
+    ...Platform.select({
+      ios: {
+        shadowColor: "#0EA5E9",
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.1,
+        shadowRadius: 4,
+      },
+      android: {
+        elevation: 2,
+      },
+    }),
+  },
+  bulletsTitle: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#1E293B",
+    marginBottom: 12,
+  },
+  bulletItem: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    marginBottom: 8,
+  },
+  bulletDot: {
+    fontSize: 16,
+    color: "#0EA5E9",
+    marginRight: 8,
+    marginTop: 2,
+  },
+  bulletText: {
+    flex: 1,
+    fontSize: 14,
+    color: "#1E293B",
+    lineHeight: 20,
+  },
+  followups: {
+    marginTop: 12,
+    marginBottom: 16,
+    padding: 16,
+    backgroundColor: "#F0FDF4",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#22C55E",
+    ...Platform.select({
+      ios: {
+        shadowColor: "#22C55E",
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.1,
+        shadowRadius: 4,
+      },
+      android: {
+        elevation: 2,
+      },
+    }),
+  },
+  followupsTitle: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#1E293B",
+    marginBottom: 12,
+  },
+  followupChips: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  followupChip: {
+    backgroundColor: "#FFFFFF",
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: "#22C55E",
+    ...Platform.select({
+      ios: {
+        shadowColor: "#22C55E",
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.1,
+        shadowRadius: 2,
+      },
+      android: {
+        elevation: 1,
+      },
+    }),
+  },
+  followupChipText: {
+    fontSize: 13,
+    color: "#22C55E",
+    fontWeight: "500",
   },
   actionsCard: {
     marginTop: 12,

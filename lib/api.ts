@@ -1,12 +1,35 @@
-import type { Message, Citation, ActionPlan, IntegrationStatus } from "./types";
+import type { Message, Citation, ActionPlan, IntegrationStatus, StructuredAnswer, NextAction } from "./types";
 import type { RoleKey } from "./roles";
 import { supabase } from "./supabase";
+import { z } from "zod";
+
+// Zod schemas for structured response validation
+const CitationSchema = z.object({
+  id: z.number(),
+  title: z.string(),
+  url: z.string(),
+  snippet: z.string(),
+});
+
+const NextActionSchema = z.object({
+  tool: z.string(),
+  params: z.record(z.any()),
+});
+
+const StructuredAnswerSchema = z.object({
+  answer: z.string(),
+  bullets: z.array(z.string()),
+  citations: z.array(CitationSchema),
+  followups: z.array(z.string()),
+  next_actions: z.array(NextActionSchema),
+});
 
 interface AgentResponse {
   id: string;
   content: string;
   citations?: Citation[];
   plan?: ActionPlan[];
+  structured?: StructuredAnswer;
 }
 
 export async function runAgent(params: { role: RoleKey; history: Message[] }): Promise<Message> {
@@ -27,6 +50,17 @@ export async function runAgent(params: { role: RoleKey; history: Message[] }): P
       throw new Error("No data received from server");
     }
 
+    // Validate structured response if present
+    let structured: StructuredAnswer | undefined;
+    if (data.structured) {
+      try {
+        structured = StructuredAnswerSchema.parse(data.structured);
+      } catch (error) {
+        console.error("Structured response validation failed:", error);
+        // Continue without structured data
+      }
+    }
+
     // Convert response to Message format
     const message: Message = {
       id: data.id,
@@ -34,6 +68,7 @@ export async function runAgent(params: { role: RoleKey; history: Message[] }): P
       content: data.content,
       citations: data.citations,
       plan: data.plan?.map(p => ({ ...p, status: "pending" as const })),
+      structured,
     };
 
     return message;

@@ -79,6 +79,16 @@ interface ResponseBody {
   content: string;
   citations?: Citation[];
   plan?: ActionPlan[];
+  structured?: {
+    answer: string;
+    bullets: string[];
+    citations: Citation[];
+    followups: string[];
+    next_actions: Array<{
+      tool: string;
+      params: Record<string, any>;
+    }>;
+  };
   metadata?: {
     intent?: string;
     topic?: string;
@@ -224,11 +234,11 @@ async function callOpenAIWithTools(
   return { toolCalls };
 }
 
-// Helper: Call Gemini 2.5 Pro
+// Helper: Call Gemini 2.5 Pro with JSON mode
 async function callGemini(
   prompt: string,
   geminiApiKey: string
-): Promise<string> {
+): Promise<{ answer: string; bullets: string[]; citations: Citation[]; followups: string[]; next_actions: Array<{ tool: string; params: Record<string, any> }> }> {
   const response = await fetch(
     "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:generateContent",
     {
@@ -241,7 +251,8 @@ async function callGemini(
         contents: [{ parts: [{ text: prompt }] }],
         generationConfig: {
           temperature: 0.7,
-          maxOutputTokens: 1000,
+          maxOutputTokens: 1500,
+          responseMimeType: "application/json",
         },
       }),
     }
@@ -253,7 +264,28 @@ async function callGemini(
   }
 
   const data = await response.json();
-  return data.candidates?.[0]?.content?.parts?.[0]?.text || "No response generated.";
+  const responseText = data.candidates?.[0]?.content?.parts?.[0]?.text || "{}";
+  
+  try {
+    const parsed = JSON.parse(responseText);
+    return {
+      answer: parsed.answer || "",
+      bullets: parsed.bullets || [],
+      citations: parsed.citations || [],
+      followups: parsed.followups || [],
+      next_actions: parsed.next_actions || []
+    };
+  } catch (error) {
+    console.error("Failed to parse Gemini JSON response:", error);
+    // Fallback to plain text response
+    return {
+      answer: responseText,
+      bullets: [],
+      citations: [],
+      followups: [],
+      next_actions: []
+    };
+  }
 }
 
 // Helper: Call classify-intent function
@@ -592,11 +624,20 @@ serve(async (req) => {
       }
     }
     
-    // Add current user message
-    conversationContext += `User: ${userQuery}\nAssistant:`;
+    // Add current user message with JSON structure instructions
+    conversationContext += `User: ${userQuery}\n\nAssistant: Return your response as JSON with this exact structure:
+{
+  "answer": "main response text with inline citations [1][2]",
+  "bullets": ["key point 1", "key point 2", "key point 3"],
+  "citations": [{"id": 1, "url": "...", "title": "..."}],
+  "followups": ["suggested question 1?", "suggested question 2?"],
+  "next_actions": [{"tool": "notion.create_page", "params": {...}}]
+}
+
+Provide 3-5 bullet points summarizing key takeaways. Generate 3-4 relevant followup questions. Include inline citations like [1][2] in your answer text.`;
 
     // Call Gemini
-    const assistantReply = await callGemini(conversationContext, geminiApiKey);
+    const structuredResponse = await callGemini(conversationContext, geminiApiKey);
 
     // Generate action plans based on tool calls
     let plan: ActionPlan[] | undefined;
@@ -625,7 +666,7 @@ serve(async (req) => {
       
       if (name === "gmail_create_draft") {
         // Generate email content specifically for the email draft
-        const emailContent = await generateEmailContent(userQuery, assistantReply, openAiKey);
+        const emailContent = await generateEmailContent(userQuery, structuredResponse.answer, openAiKey);
         
         // Generate subject line using LLM
         const generatedSubject = await generateEmailSubject(userQuery, emailContent, openAiKey);
@@ -657,7 +698,7 @@ serve(async (req) => {
       try {
         await addMemory(userId, role, [
           { role: "user", content: userQuery },
-          { role: "assistant", content: assistantReply }
+          { role: "assistant", content: structuredResponse.answer }
         ], mem0ApiKey);
       } catch (error) {
         console.error("Memory storage failed:", error);
@@ -668,9 +709,16 @@ serve(async (req) => {
     // Build response
     const response: ResponseBody = {
       id: `msg-${Date.now()}`,
-      content: assistantReply,
-      citations: citations && citations.length > 0 ? citations : undefined,
+      content: structuredResponse.answer,
+      citations: structuredResponse.citations.length > 0 ? structuredResponse.citations : (citations && citations.length > 0 ? citations : undefined),
       plan,
+      structured: {
+        answer: structuredResponse.answer,
+        bullets: structuredResponse.bullets,
+        citations: structuredResponse.citations.length > 0 ? structuredResponse.citations : (citations || []),
+        followups: structuredResponse.followups,
+        next_actions: structuredResponse.next_actions
+      },
       metadata: {
         intent: intentResult.intent,
         topic: intentResult.slots.topic,

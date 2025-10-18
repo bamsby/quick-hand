@@ -17,12 +17,26 @@ export type ActionPlan = {
   result?: string;
 };
 
+export type NextAction = {
+  tool: string;
+  params: Record<string, any>;
+};
+
+export type StructuredAnswer = {
+  answer: string;
+  bullets: string[];
+  citations: Citation[];
+  followups: string[];
+  next_actions: NextAction[];
+};
+
 export type Message = {
   id: string;
   role: Role;
   content: string;
   citations?: Citation[];
   plan?: ActionPlan[];
+  structured?: StructuredAnswer;
   metadata?: {
     intent?: string;
     topic?: string;
