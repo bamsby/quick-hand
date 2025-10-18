@@ -397,6 +397,80 @@ ${formatted}
 </html>`;
 }
 
+// Helper function to generate structured answer
+async function generateStructuredAnswer(userQuery: string, assistantReply: string, citations: Citation[], openAiKey: string): Promise<StructuredAnswer> {
+  try {
+    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${openAiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "gpt-4o-mini",
+        messages: [
+          {
+            role: "system",
+            content: `Generate a structured response with:
+1. A concise answer (2-3 sentences)
+2. 3-5 bullet points with key insights
+3. Follow-up questions the user might ask
+4. Next actions they might want to take
+
+Format as JSON with keys: answer, bullets, followups, next_actions`
+          },
+          {
+            role: "user",
+            content: `Query: ${userQuery}\n\nResponse: ${assistantReply}\n\nCitations: ${JSON.stringify(citations)}`
+          }
+        ],
+        max_tokens: 400,
+        temperature: 0.7
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error(`OpenAI API error: ${response.status}`);
+    }
+
+    const data = await response.json();
+    const content = data.choices[0]?.message?.content?.trim();
+    
+    try {
+      const parsed = JSON.parse(content);
+      // Ensure all required fields are present and properly typed
+      return {
+        answer: parsed.answer || assistantReply,
+        bullets: Array.isArray(parsed.bullets) ? parsed.bullets : [assistantReply],
+        citations: citations || [],
+        followups: Array.isArray(parsed.followups) ? parsed.followups : ["Tell me more about this", "What are the next steps?"],
+        next_actions: Array.isArray(parsed.next_actions) ? parsed.next_actions.map((action: any) => ({
+          tool: typeof action === 'string' ? action : (action.tool || 'unknown'),
+          params: typeof action === 'object' && action.params ? action.params : {}
+        })) : []
+      };
+    } catch {
+      // Fallback if JSON parsing fails
+      return {
+        answer: assistantReply,
+        bullets: [assistantReply],
+        citations: citations || [],
+        followups: ["Tell me more about this", "What are the next steps?"],
+        next_actions: []
+      };
+    }
+  } catch (error) {
+    console.error("Error generating structured answer:", error);
+    return {
+      answer: assistantReply,
+      bullets: [assistantReply],
+      citations: citations || [],
+      followups: ["Tell me more about this", "What are the next steps?"],
+      next_actions: []
+    };
+  }
+}
+
 // Helper: Generate email content using OpenAI
 async function generateEmailContent(
   userQuery: string,
@@ -691,8 +765,11 @@ serve(async (req) => {
       const parsedArgs = JSON.parse(args);
       
       if (name === "notion_create_page") {
+        // Use provided content_md or fallback to assistant reply
+        const content = parsedArgs.content_md || assistantReply;
+        
         // Auto-generate title using OpenAI if not provided
-        const title = parsedArgs.title || await generateTitle(parsedArgs.content_md, openAiKey);
+        const title = parsedArgs.title || await generateTitle(content, openAiKey);
         
         actions.push({
           id: `action-notion-${Date.now()}`,
@@ -700,7 +777,7 @@ serve(async (req) => {
           label: "Save to Notion",
           params: { 
             title: title, 
-            content: parsedArgs.content_md,
+            content: content,
             citations: citations || [] // Include citations in params
           },
         });
@@ -735,6 +812,12 @@ serve(async (req) => {
       plan = actions;
     }
 
+    // Generate structured answer if we have citations or actions
+    let structured: StructuredAnswer | undefined;
+    if (citations.length > 0 || actions.length > 0) {
+      structured = await generateStructuredAnswer(userQuery, assistantReply, citations, openAiKey);
+    }
+
     // Store conversation in memory if user is authenticated and mem0 is available
     if (userId && mem0ApiKey) {
       try {
@@ -754,13 +837,7 @@ serve(async (req) => {
       content: assistantReply,
       citations: citations && citations.length > 0 ? citations : undefined,
       plan,
-      structured: {
-        answer: assistantReply,
-        bullets: [],
-        citations: citations || [],
-        followups: [],
-        next_actions: []
-      },
+      structured,
       metadata: {
         intent: intentResult.intent,
         topic: intentResult.slots.topic,
