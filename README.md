@@ -24,7 +24,7 @@ npm run ios        # iOS simulator (macOS only)
 npm run web        # Web browser
 ```
 
-**First time setup?** Follow the [Setup Guide](./SETUP_GUIDE.md) for complete instructions.
+**First time setup?** Follow the [Setup Guide](./docs/setup/SETUP_GUIDE.md) for complete instructions.
 
 ## 🔐 Authentication
 
@@ -92,7 +92,7 @@ supabase secrets set EXA_API_KEY=...
 
 ⚠️ **Security:** API keys live on Supabase servers only, never exposed to the app bundle.
 
-See [SETUP_GUIDE.md](./SETUP_GUIDE.md) for complete setup instructions.
+See [SETUP_GUIDE.md](./docs/setup/SETUP_GUIDE.md) for complete setup instructions.
 
 ## 🎯 Current Implementation Status
 
@@ -178,7 +178,23 @@ See [SETUP_GUIDE.md](./SETUP_GUIDE.md) for complete setup instructions.
 - Target: Mobile-first, single-hand use
 - See `.cursorrules` for full development guidelines
 
-## 📚 Resources
+## 📚 Documentation
+
+All project documentation is organized in the [`docs/`](./docs/) directory:
+
+- **Setup & Getting Started**: [`docs/setup/`](./docs/setup/) - Complete setup guides
+- **Features & Implementation**: [`docs/features/`](./docs/features/) - Feature documentation
+- **Testing**: [`docs/testing/`](./docs/testing/) - Testing guides and results
+- **Deployment**: [`docs/deployment/`](./docs/deployment/) - Deployment documentation
+- **Bug Fixes**: [`docs/fixes/`](./docs/fixes/) - Issue tracking and fixes
+
+**Quick Navigation:**
+- [Setup Guide](./docs/setup/SETUP_GUIDE.md) - Complete project setup
+- [Testing Guide](./docs/testing/TESTING_GUIDE.md) - How to test the app
+- [Implementation Summary](./docs/features/IMPLEMENTATION_SUMMARY.md) - Current features
+- [Documentation Index](./docs/README.md) - Full documentation overview
+
+## 📚 External Resources
 
 - [Expo Documentation](https://docs.expo.dev/)
 - [Expo Router](https://docs.expo.dev/router/introduction/)
