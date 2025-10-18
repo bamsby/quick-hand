@@ -6,7 +6,11 @@
     "start": "expo start",
     "android": "expo start --android",
     "ios": "expo start --ios",
-    "web": "expo start --web"
+    "web": "expo start --web",
+    "test:memory": "playwright test tests/memory-integration.spec.ts",
+    "test:memory:ui": "playwright test tests/memory-integration.spec.ts --ui",
+    "test:memory:debug": "playwright test tests/memory-integration.spec.ts --debug",
+    "test:memory:headed": "playwright test tests/memory-integration.spec.ts --headed"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.75.1",
@@ -26,6 +30,7 @@
     "zod": "^3.25.76"
   },
   "devDependencies": {
+    "@playwright/test": "^1.56.1",
     "@types/react": "~19.1.0",
     "typescript": "~5.9.2"
   },

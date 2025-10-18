@@ -1,5 +1,6 @@
 // @deno-types="npm:@types/node"
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 // CORS headers for client requests
 const corsHeaders = {
@@ -97,6 +98,64 @@ function getCitationLimit(query: string): number {
   
   // Default: 3 citations for most queries
   return 3;
+}
+
+// Helper: Add memory to mem0.ai
+async function addMemory(userId: string, role: string, messages: Array<{role: string, content: string}>, mem0ApiKey: string): Promise<void> {
+  try {
+    const response = await fetch("https://api.mem0.ai/v1/memories", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${mem0ApiKey}`,
+      },
+      body: JSON.stringify({
+        user_id: userId,
+        agent_id: role,
+        messages: messages,
+        metadata: {
+          role: role,
+          timestamp: new Date().toISOString(),
+        },
+      }),
+    });
+
+    if (!response.ok) {
+      console.error("Mem0 add memory error:", await response.text());
+    }
+  } catch (error) {
+    console.error("Mem0 add memory failed:", error);
+  }
+}
+
+// Helper: Search memories from mem0.ai
+async function searchMemories(userId: string, role: string, query: string, mem0ApiKey: string): Promise<string[]> {
+  try {
+    const response = await fetch("https://api.mem0.ai/v1/memories/search", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${mem0ApiKey}`,
+      },
+      body: JSON.stringify({
+        user_id: userId,
+        agent_id: role,
+        query: query,
+        limit: 5,
+      }),
+    });
+
+    if (!response.ok) {
+      console.error("Mem0 search error:", await response.text());
+      return [];
+    }
+
+    const data = await response.json();
+    return (data.results || []).map((result: any) => result.memory || result.content || "");
+  } catch (error) {
+    console.error("Mem0 search failed:", error);
+    return [];
+  }
 }
 
 // Helper: Call Exa API for web search
@@ -309,9 +368,37 @@ serve(async (req) => {
     // Get environment variables
     const openAiKey = Deno.env.get("OPENAI_API_KEY");
     const exaApiKey = Deno.env.get("EXA_API_KEY");
+    const mem0ApiKey = Deno.env.get("MEM0_API_KEY");
 
     if (!openAiKey) {
       throw new Error("OPENAI_API_KEY not set in Supabase secrets");
+    }
+
+    // Get user from JWT for memory
+    const authHeader = req.headers.get("Authorization");
+    let userId: string | null = null;
+    
+    if (authHeader && mem0ApiKey) {
+      try {
+        // Create Supabase client with user's JWT
+        const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
+        const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+        
+        const supabase = createClient(supabaseUrl, supabaseServiceKey, {
+          global: {
+            headers: { Authorization: authHeader },
+          },
+        });
+
+        // Get user from JWT
+        const { data: { user }, error: userError } = await supabase.auth.getUser();
+        if (!userError && user) {
+          userId = user.id;
+        }
+      } catch (error) {
+        console.error("User authentication error:", error);
+        // Continue without memory if auth fails
+      }
     }
 
     // Parse request
@@ -331,6 +418,22 @@ serve(async (req) => {
     const userQuery = lastUserMessage.content;
     let citations: Citation[] | undefined;
     let contextPrompt = "";
+    
+    // Search for relevant memories if user is authenticated and mem0 is available
+    let memoryContext = "";
+    if (userId && mem0ApiKey) {
+      try {
+        const memories = await searchMemories(userId, role, userQuery, mem0ApiKey);
+        if (memories.length > 0) {
+          memoryContext = "\n\nPREVIOUS CONVERSATION CONTEXT:\n" +
+            memories.map((memory, index) => `${index + 1}. ${memory}`).join("\n") +
+            "\n\nUse this context to provide more personalized and relevant responses. Reference previous conversations naturally when appropriate.";
+        }
+      } catch (error) {
+        console.error("Memory search failed:", error);
+        // Continue without memory context
+      }
+    }
     
     // Check if this is an email drafting request
     const lowerQuery = userQuery.toLowerCase();
@@ -374,8 +477,8 @@ serve(async (req) => {
       .filter(m => m.role !== "system" || m.id === "sys") // Keep only the first system message
       .map(m => ({
         role: m.role,
-        content: m.role === "system" && contextPrompt 
-          ? m.content + contextPrompt 
+        content: m.role === "system" && (contextPrompt || memoryContext)
+          ? m.content + contextPrompt + memoryContext
           : m.content,
       }));
 
@@ -433,6 +536,19 @@ serve(async (req) => {
     // Only assign plan if we have actions
     if (actions.length > 0) {
       plan = actions;
+    }
+
+    // Store conversation in memory if user is authenticated and mem0 is available
+    if (userId && mem0ApiKey) {
+      try {
+        await addMemory(userId, role, [
+          { role: "user", content: userQuery },
+          { role: "assistant", content: assistantReply }
+        ], mem0ApiKey);
+      } catch (error) {
+        console.error("Memory storage failed:", error);
+        // Continue without storing memory
+      }
     }
 
     // Build response
