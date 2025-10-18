@@ -26,6 +26,7 @@ export type Message = {
   metadata?: {
     intent?: string;
     topic?: string;
+    toolCalls?: string[]; // Track which tools were called
   };
 };
 

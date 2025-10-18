@@ -8,6 +8,47 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+// Tool definitions for OpenAI function calling
+const TOOL_DEFINITIONS = [
+  {
+    name: "exa_search",
+    description: "Search the web for current information, facts, news, or research. Use when user needs external knowledge.",
+    parameters: {
+      type: "object",
+      properties: {
+        query: { type: "string", description: "Search query" },
+        num_results: { type: "number", description: "Number of results (1-5)", default: 3 }
+      },
+      required: ["query"]
+    }
+  },
+  {
+    name: "notion_create_page",
+    description: "Create a Notion page. Use when user wants to save, store, or organize information.",
+    parameters: {
+      type: "object",
+      properties: {
+        title: { type: "string", description: "Page title" },
+        content_md: { type: "string", description: "Markdown content" }
+      },
+      required: ["title", "content_md"]
+    }
+  },
+  {
+    name: "gmail_create_draft",
+    description: "Draft an email in Gmail. Use when user wants to compose or send an email.",
+    parameters: {
+      type: "object",
+      properties: {
+        to: { type: "array", items: { type: "string" }, description: "Recipient emails" },
+        subject: { type: "string", description: "Email subject" },
+        body_text: { type: "string", description: "Email body text" }
+      },
+      required: ["to", "subject", "body_text"]
+    }
+  }
+];
+
 interface Message {
   id: string;
   role: "system" | "user" | "assistant";
@@ -38,67 +79,13 @@ interface ResponseBody {
   content: string;
   citations?: Citation[];
   plan?: ActionPlan[];
+  metadata?: {
+    intent?: string;
+    topic?: string;
+    toolCalls?: string[];
+  };
 }
 
-// Helper: Check if query needs web search
-function needsWebSearch(query: string): boolean {
-  const searchKeywords = [
-    "latest", "recent", "current", "today", "news", "what is", "who is",
-    "search", "find", "look up", "when did", "how much", "price", "cost",
-    "hackathon", "event", "competition", "prize", "research", "about"
-  ];
-  const lowerQuery = query.toLowerCase();
-  return searchKeywords.some(keyword => lowerQuery.includes(keyword));
-}
-
-// Helper: Extract main topic from query (remove action phrases)
-function extractMainTopic(query: string): string {
-  // Remove action phrases that might confuse the LLM
-  const actionPhrases = [
-    /save\s+(?:to|into|in)\s+notion/gi,
-    /save\s+(?:to|into|in)\s+my\s+notion/gi,
-    /save\s+(?:this|it|that)/gi,
-    /draft\s+(?:an?\s+)?email/gi,
-    /send\s+(?:an?\s+)?email/gi,
-    /create\s+(?:a\s+)?notion\s+page/gi,
-    /and\s+save/gi,
-    /then\s+save/gi,
-  ];
-  
-  let cleanedQuery = query;
-  actionPhrases.forEach(phrase => {
-    cleanedQuery = cleanedQuery.replace(phrase, '');
-  });
-  
-  return cleanedQuery.trim();
-}
-
-// Helper: Determine query complexity and return citation limit
-function getCitationLimit(query: string): number {
-  const lowerQuery = query.toLowerCase();
-  
-  // Complex queries (5 citations): multiple questions, comparisons, detailed analysis
-  const complexIndicators = [
-    "compare", "difference", "versus", "vs", "analyze", "explain in detail",
-    "comprehensive", "all about", "everything", "complete guide"
-  ];
-  
-  // Simple queries (1 citation): direct facts, definitions
-  const simpleIndicators = [
-    "what is", "who is", "when is", "where is", "define", "meaning of"
-  ];
-  
-  if (complexIndicators.some(indicator => lowerQuery.includes(indicator))) {
-    return 5;
-  }
-  
-  if (simpleIndicators.some(indicator => lowerQuery.includes(indicator))) {
-    return 1;
-  }
-  
-  // Default: 3 citations for most queries
-  return 3;
-}
 
 // Helper: Add memory to mem0.ai
 async function addMemory(userId: string, role: string, messages: Array<{role: string, content: string}>, mem0ApiKey: string): Promise<void> {
@@ -193,6 +180,48 @@ async function searchExa(query: string, exaApiKey: string, limit: number): Promi
     console.error("Exa search failed:", error);
     return [];
   }
+}
+
+// Helper: Call OpenAI with tool calling
+async function callOpenAIWithTools(
+  userQuery: string,
+  intent: string,
+  conversationHistory: Message[],
+  openAiKey: string
+): Promise<{ toolCalls: any[], response?: string }> {
+  // Skip tools for chitchat
+  const shouldOfferTools = intent !== "chitchat";
+  
+  const messages = conversationHistory.map(m => ({
+    role: m.role === "system" ? "system" : m.role,
+    content: m.content
+  }));
+  
+  const response = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${openAiKey}`,
+    },
+    body: JSON.stringify({
+      model: "gpt-4o",
+      messages: messages,
+      tools: shouldOfferTools ? TOOL_DEFINITIONS.map(t => ({ type: "function", function: t })) : undefined,
+      tool_choice: shouldOfferTools ? "auto" : undefined,
+      temperature: 0.3,
+      max_tokens: 500,
+    }),
+  });
+
+  if (!response.ok) {
+    const error = await response.text();
+    throw new Error(`OpenAI API error: ${error}`);
+  }
+  
+  const data = await response.json();
+  const toolCalls = data.choices[0]?.message?.tool_calls || [];
+  
+  return { toolCalls };
 }
 
 // Helper: Call Gemini 2.5 Pro
@@ -490,37 +519,48 @@ serve(async (req) => {
       }
     }
     
-    // Optimize web search based on intent
-    const shouldSearch = intentResult.intent === "info_lookup" || 
-                     (intentResult.intent === "summarize" && exaApiKey);
+    // Use OpenAI tool calling to decide on actions
+    let toolCalls: any[] = [];
+    let toolCallNames: string[] = [];
     
-    // Skip web search for chitchat and email_draft
-    if (exaApiKey && shouldSearch && intentResult.intent !== "chitchat" && intentResult.intent !== "email_draft") {
-      console.log("Performing web search for:", userQuery);
-      const citationLimit = getCitationLimit(userQuery);
-      console.log(`Citation limit for this query: ${citationLimit}`);
+    try {
+      const openAiResult = await callOpenAIWithTools(userQuery, intentResult.intent, history, openAiKey);
+      toolCalls = openAiResult.toolCalls;
+      toolCallNames = toolCalls.map(tc => tc.function.name);
       
-      // Use intent topic or extract from query
-      const mainTopic = intentResult.slots.topic || extractMainTopic(userQuery);
-      console.log(`Search topic: "${mainTopic}"`);
-      
-      // Use topic for search
-      citations = await searchExa(mainTopic, exaApiKey, citationLimit);
-      
-      if (citations.length > 0) {
-        contextPrompt = "\n\nWEB SEARCH RESULTS:\n" +
-          citations.map(c => 
-            `[${c.id}] ${c.title}\n${c.snippet}\nURL: ${c.url}`
-          ).join("\n\n") +
-          `\n\nIMPORTANT INSTRUCTIONS:\n` +
-          `User wants to know about: "${mainTopic}"\n` +
-          `1. Use ONLY the above sources to provide information about this topic\n` +
-          `2. Provide a clear, informative summary based on the sources\n` +
-          `3. Include inline citations like [1], [2] to reference specific information\n` +
-          `4. Be concise and accurate\n` +
-          `5. Do NOT give instructions on how to save/email - just provide the information itself\n` +
-          `6. Do NOT add context or assumptions beyond what's in the sources (e.g., don't focus on Notion/email if that's not the topic)\n` +
-          `7. The user's actions (save to Notion, draft email, etc.) will be handled automatically with action buttons`;
+      console.log("OpenAI tool calls:", toolCallNames);
+    } catch (error) {
+      console.error("OpenAI tool calling failed:", error);
+      // Continue without tool calls
+    }
+    
+    // Process tool calls
+    if (toolCalls.length > 0) {
+      for (const toolCall of toolCalls) {
+        const { name, arguments: args } = toolCall.function;
+        const parsedArgs = JSON.parse(args);
+        
+        if (name === "exa_search" && exaApiKey) {
+          console.log("Executing Exa search:", parsedArgs.query);
+          const searchResults = await searchExa(parsedArgs.query, exaApiKey, parsedArgs.num_results || 3);
+          citations = searchResults;
+          
+          if (citations.length > 0) {
+            contextPrompt = "\n\nWEB SEARCH RESULTS:\n" +
+              citations.map(c => 
+                `[${c.id}] ${c.title}\n${c.snippet}\nURL: ${c.url}`
+              ).join("\n\n") +
+              `\n\nIMPORTANT INSTRUCTIONS:\n` +
+              `User wants to know about: "${parsedArgs.query}"\n` +
+              `1. Use ONLY the above sources to provide information about this topic\n` +
+              `2. Provide a clear, informative summary based on the sources\n` +
+              `3. Include inline citations like [1], [2] to reference specific information\n` +
+              `4. Be concise and accurate\n` +
+              `5. Do NOT give instructions on how to save/email - just provide the information itself\n` +
+              `6. Do NOT add context or assumptions beyond what's in the sources\n` +
+              `7. The user's actions (save to Notion, draft email, etc.) will be handled automatically with action buttons`;
+          }
+        }
       }
     }
     
@@ -558,55 +598,53 @@ serve(async (req) => {
     // Call Gemini
     const assistantReply = await callGemini(conversationContext, geminiApiKey);
 
-    // Detect if we should suggest actions based on intent
+    // Generate action plans based on tool calls
     let plan: ActionPlan[] | undefined;
     const actions: ActionPlan[] = [];
     
-    // Check for Notion action based on intent or keywords
-    if (intentResult.intent === "action_request" || 
-        userQuery.toLowerCase().includes("save") || 
-        userQuery.toLowerCase().includes("notion")) {
-      // Auto-generate title using OpenAI
-      const generatedTitle = await generateTitle(assistantReply, openAiKey);
+    // Process tool calls for action plans
+    for (const toolCall of toolCalls) {
+      const { name, arguments: args } = toolCall.function;
+      const parsedArgs = JSON.parse(args);
       
-      actions.push({
-        id: `action-notion-${Date.now()}`,
-        action: "notion",
-        label: "Save to Notion",
-        params: { 
-          title: generatedTitle, 
-          content: assistantReply,
-          citations: citations || [] // Include citations in params
-        },
-      });
-    }
-    
-    // Check for Gmail action based on intent
-    if (intentResult.intent === "email_draft" || 
-        userQuery.toLowerCase().includes("email") || 
-        userQuery.toLowerCase().includes("draft") || 
-        userQuery.toLowerCase().includes("gmail") || 
-        userQuery.toLowerCase().includes("send")) {
-      // Generate email content specifically for the email draft
-      const emailContent = await generateEmailContent(userQuery, assistantReply, openAiKey);
+      if (name === "notion_create_page") {
+        // Auto-generate title using OpenAI if not provided
+        const title = parsedArgs.title || await generateTitle(parsedArgs.content_md, openAiKey);
+        
+        actions.push({
+          id: `action-notion-${Date.now()}`,
+          action: "notion",
+          label: "Save to Notion",
+          params: { 
+            title: title, 
+            content: parsedArgs.content_md,
+            citations: citations || [] // Include citations in params
+          },
+        });
+      }
       
-      // Generate subject line using LLM
-      const generatedSubject = await generateEmailSubject(userQuery, emailContent, openAiKey);
-      
-      // Format email body as HTML for Gmail API
-      const formattedBodyHTML = formatEmailBody(emailContent);
-      
-      actions.push({
-        id: `action-gmail-${Date.now()}`,
-        action: "gmail",
-        label: "Draft Email",
-        params: { 
-          to: "", // User will fill this in the checkpoint modal
-          subject: generatedSubject,
-          bodyText: emailContent, // Plain text for preview
-          bodyHTML: formattedBodyHTML // HTML for Gmail API
-        },
-      });
+      if (name === "gmail_create_draft") {
+        // Generate email content specifically for the email draft
+        const emailContent = await generateEmailContent(userQuery, assistantReply, openAiKey);
+        
+        // Generate subject line using LLM
+        const generatedSubject = await generateEmailSubject(userQuery, emailContent, openAiKey);
+        
+        // Format email body as HTML for Gmail API
+        const formattedBodyHTML = formatEmailBody(emailContent);
+        
+        actions.push({
+          id: `action-gmail-${Date.now()}`,
+          action: "gmail",
+          label: "Draft Email",
+          params: { 
+            to: parsedArgs.to || [], // Use tool call params or default
+            subject: parsedArgs.subject || generatedSubject,
+            bodyText: parsedArgs.body_text || emailContent, // Plain text for preview
+            bodyHTML: formattedBodyHTML // HTML for Gmail API
+          },
+        });
+      }
     }
     
     // Only assign plan if we have actions
@@ -633,6 +671,11 @@ serve(async (req) => {
       content: assistantReply,
       citations: citations && citations.length > 0 ? citations : undefined,
       plan,
+      metadata: {
+        intent: intentResult.intent,
+        topic: intentResult.slots.topic,
+        toolCalls: toolCallNames
+      }
     };
 
     return new Response(
