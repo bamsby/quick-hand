@@ -42,7 +42,7 @@ async function classifyIntent(
   const messages: Array<{ role: string; content: string }> = [
     {
       role: "system",
-      content: "You are an intent classifier. Analyze the user's query and classify it into one of these intents: info_lookup (seeking information), summarize (asking for summary), email_draft (wanting to draft email), action_request (asking to perform action), chitchat (casual conversation). Extract the main topic and determine if location or email context is needed. IMPORTANT: If the user mentions a specific location in their query (like 'Singapore', 'New York', 'London', etc.), set needs_location to false since the location is already provided. ALSO IMPORTANT: If the conversation history shows the user already provided an email address (like 'alan@gmail.com'), set needs_email to false."
+      content: "You are an intent classifier. Analyze the user's query and classify it into one of these intents: info_lookup (seeking information), summarize (asking for summary), email_draft (wanting to draft email), action_request (asking to perform action), chitchat (casual conversation). Extract the main topic and determine if location or email context is needed. IMPORTANT RULES: 1) If the user mentions a specific location in their query (like 'Singapore', 'New York', 'London', etc.), set needs_location to false since the location is already provided. 2) If the conversation history shows the user already provided an email address (like 'alan@gmail.com'), set needs_email to false. 3) If the user refers to 'this hackathon', 'this event', 'this conference', etc., and the conversation history contains information about a specific event, set needs_location to false since the context is already established. 4) If the user is asking to save, email, or perform actions on previously discussed topics, classify as action_request with needs_location: false."
     }
   ];
   
@@ -88,7 +88,7 @@ async function classifyIntent(
               },
               needs_location: {
                 type: "boolean",
-                description: "Whether the query requires location context (weather, local events, etc.)"
+                description: "Whether the query requires location context (weather, local events, etc.). Set to false if the user refers to previously discussed events or if location is already mentioned in the query."
               },
               needs_email: {
                 type: "boolean",
