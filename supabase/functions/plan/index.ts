@@ -1,63 +1,13 @@
 // @deno-types="npm:@types/node"
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { ROLE_PRESETS, type RoleKey } from "./_shared/roles.ts";
 
-// CORS headers for client requests
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
-
-// Tool definitions for OpenAI function calling
-const TOOL_DEFINITIONS = [
-  {
-    name: "exa_search",
-    description: "Search the web for current information, facts, news, or research. Use when user needs external knowledge.",
-    parameters: {
-      type: "object",
-      properties: {
-        query: { type: "string", description: "Search query" },
-        num_results: { type: "number", description: "Number of results (1-5)", default: 3 }
-      },
-      required: ["query"]
-    }
-  },
-  {
-    name: "notion_create_page",
-    description: "Create a Notion page. Use when user wants to save, store, or organize information.",
-    parameters: {
-      type: "object",
-      properties: {
-        title: { type: "string", description: "Page title" },
-        content_md: { type: "string", description: "Markdown content" }
-      },
-      required: ["title", "content_md"]
-    }
-  },
-  {
-    name: "gmail_create_draft",
-    description: "Draft an email in Gmail. Use when user wants to compose or send an email.",
-    parameters: {
-      type: "object",
-      properties: {
-        to: { type: "array", items: { type: "string" }, description: "Recipient emails" },
-        subject: { type: "string", description: "Email subject" },
-        body_text: { type: "string", description: "Email body text" }
-      },
-      required: ["to", "subject", "body_text"]
-    }
-  }
-];
-
+// Type definitions
 interface Message {
   id: string;
   role: "system" | "user" | "assistant";
   content: string;
-}
-
-interface RequestBody {
-  role: string;
-  history: Message[];
 }
 
 interface Citation {
@@ -72,6 +22,26 @@ interface ActionPlan {
   action: "summarize" | "notion" | "gmail";
   label: string;
   params?: any;
+  status?: "pending" | "running" | "done" | "error";
+  result?: string;
+}
+
+interface NextAction {
+  tool: string;
+  params: Record<string, any>;
+}
+
+interface StructuredAnswer {
+  answer: string;
+  bullets: string[];
+  citations: Citation[];
+  followups: string[];
+  next_actions: NextAction[];
+}
+
+interface RequestBody {
+  role: string;
+  history: Message[];
 }
 
 interface ResponseBody {
@@ -79,22 +49,85 @@ interface ResponseBody {
   content: string;
   citations?: Citation[];
   plan?: ActionPlan[];
-  structured?: {
-    answer: string;
-    bullets: string[];
-    citations: Citation[];
-    followups: string[];
-    next_actions: Array<{
-      tool: string;
-      params: Record<string, any>;
-    }>;
-  };
+  structured?: StructuredAnswer;
   metadata?: {
     intent?: string;
     topic?: string;
     toolCalls?: string[];
   };
 }
+
+// CORS headers for client requests
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Methods": "GET, POST, OPTIONS"
+};
+
+// Tool registry - single source of truth for all tools
+const TOOL_DEFINITIONS = [
+  {
+    name: "exa_search",
+    description: "Search the web for information using Exa API. Use when user needs current information or facts.",
+    parameters: {
+      type: "object",
+      properties: {
+        query: {
+          type: "string",
+          description: "Search query"
+        },
+        num_results: {
+          type: "number",
+          description: "Number of results to return (default: 3)"
+        }
+      },
+      required: ["query"]
+    }
+  },
+  {
+    name: "notion_create_page",
+    description: "Create a new page in Notion. Use when user wants to save information to Notion.",
+    parameters: {
+      type: "object",
+      properties: {
+        title: {
+          type: "string",
+          description: "Page title"
+        },
+        content_md: {
+          type: "string",
+          description: "Page content in markdown"
+        }
+      },
+      required: ["title", "content_md"]
+    }
+  },
+  {
+    name: "gmail_create_draft",
+    description: "Draft an email in Gmail. Use when user wants to compose or send an email.",
+    parameters: {
+      type: "object",
+      properties: {
+        to: {
+          type: "array",
+          items: {
+            type: "string"
+          },
+          description: "Recipient emails"
+        },
+        subject: {
+          type: "string",
+          description: "Email subject"
+        },
+        body_text: {
+          type: "string",
+          description: "Email body text"
+        }
+      },
+      required: ["to", "subject", "body_text"]
+    }
+  }
+];
 
 
 // Helper: Add memory to mem0.ai
@@ -234,11 +267,11 @@ async function callOpenAIWithTools(
   return { toolCalls };
 }
 
-// Helper: Call Gemini 2.5 Pro with JSON mode
+// Helper: Call Gemini 2.5 Pro (simplified - no JSON mode)
 async function callGemini(
   prompt: string,
   geminiApiKey: string
-): Promise<{ answer: string; bullets: string[]; citations: Citation[]; followups: string[]; next_actions: Array<{ tool: string; params: Record<string, any> }> }> {
+): Promise<string> {
   const response = await fetch(
     "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:generateContent",
     {
@@ -251,8 +284,7 @@ async function callGemini(
         contents: [{ parts: [{ text: prompt }] }],
         generationConfig: {
           temperature: 0.7,
-          maxOutputTokens: 1500,
-          responseMimeType: "application/json",
+          maxOutputTokens: 1000,
         },
       }),
     }
@@ -264,50 +296,42 @@ async function callGemini(
   }
 
   const data = await response.json();
-  const responseText = data.candidates?.[0]?.content?.parts?.[0]?.text || "{}";
-  
-  try {
-    const parsed = JSON.parse(responseText);
-    return {
-      answer: parsed.answer || "",
-      bullets: parsed.bullets || [],
-      citations: parsed.citations || [],
-      followups: parsed.followups || [],
-      next_actions: parsed.next_actions || []
-    };
-  } catch (error) {
-    console.error("Failed to parse Gemini JSON response:", error);
-    // Fallback to plain text response
-    return {
-      answer: responseText,
-      bullets: [],
-      citations: [],
-      followups: [],
-      next_actions: []
-    };
-  }
+  return data.candidates?.[0]?.content?.parts?.[0]?.text || "No response generated.";
 }
 
 // Helper: Call classify-intent function
 async function classifyIntent(
   query: string,
   role: string,
-  supabaseUrl: string
+  supabaseUrl: string,
+  authHeader?: string
 ): Promise<{ intent: string; slots: { topic: string; needs: { location: boolean; email: boolean } } }> {
-  const response = await fetch(`${supabaseUrl}/functions/v1/classify-intent`, {
-    method: "POST",
-    headers: {
+  try {
+    const headers: Record<string, string> = {
       "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ query, role }),
-  });
+    };
+    
+    if (authHeader) {
+      headers["Authorization"] = authHeader;
+    }
+    
+    const response = await fetch(`${supabaseUrl}/functions/v1/classify-intent`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ query, role }),
+    });
 
-  if (!response.ok) {
-    const error = await response.text();
-    throw new Error(`Intent classification error: ${error}`);
+    if (!response.ok) {
+      const error = await response.text();
+      throw new Error(`Intent classification error: ${error}`);
+    }
+
+    return await response.json();
+  } catch (error) {
+    console.error('Intent classification error:', error);
+    // Fallback to info_lookup intent
+    return { intent: 'info_lookup', slots: { topic: query, needs: { location: false, email: false } } };
   }
-
-  return await response.json();
 }
 
 // Helper: Generate a concise title for Notion using OpenAI
@@ -478,7 +502,6 @@ serve(async (req) => {
     if (authHeader && mem0ApiKey) {
       try {
         // Create Supabase client with user's JWT
-        const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
         const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
         
         const supabase = createClient(supabaseUrl, supabaseServiceKey, {
@@ -517,7 +540,24 @@ serve(async (req) => {
     // Classify intent first
     let intentResult;
     try {
-      intentResult = await classifyIntent(userQuery, role, supabaseUrl);
+      const intentResponse = await classifyIntent(userQuery, role, supabaseUrl, authHeader);
+      
+      // Check if we need additional information
+      if ('needs_info' in intentResponse && intentResponse.needs_info) {
+        return new Response(
+          JSON.stringify({
+            needs_info: true,
+            missing: intentResponse.missing,
+            question: intentResponse.question
+          }),
+          {
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+            status: 200,
+          }
+        );
+      }
+      
+      intentResult = intentResponse;
       console.log("Intent classification:", {
         intent: intentResult.intent,
         topic: intentResult.slots.topic,
@@ -608,6 +648,17 @@ serve(async (req) => {
     let conversationContext = "";
     if (systemMessage) {
       conversationContext += systemMessage.content;
+      
+      // Add few-shot examples based on role
+      const rolePreset = ROLE_PRESETS[role as RoleKey];
+      if (rolePreset && rolePreset.fewShots) {
+        conversationContext += "\n\nEXAMPLES:\n\n";
+        conversationContext += `User: ${rolePreset.fewShots.searchWithCitations.user}\n`;
+        conversationContext += `Assistant: ${rolePreset.fewShots.searchWithCitations.assistant}\n\n`;
+        conversationContext += `User: ${rolePreset.fewShots.emailDraft.user}\n`;
+        conversationContext += `Assistant: ${rolePreset.fewShots.emailDraft.assistant}\n\n`;
+      }
+      
       if (contextPrompt || memoryContext) {
         conversationContext += contextPrompt + memoryContext;
       }
@@ -624,20 +675,11 @@ serve(async (req) => {
       }
     }
     
-    // Add current user message with JSON structure instructions
-    conversationContext += `User: ${userQuery}\n\nAssistant: Return your response as JSON with this exact structure:
-{
-  "answer": "main response text with inline citations [1][2]",
-  "bullets": ["key point 1", "key point 2", "key point 3"],
-  "citations": [{"id": 1, "url": "...", "title": "..."}],
-  "followups": ["suggested question 1?", "suggested question 2?"],
-  "next_actions": [{"tool": "notion.create_page", "params": {...}}]
-}
-
-Provide 3-5 bullet points summarizing key takeaways. Generate 3-4 relevant followup questions. Include inline citations like [1][2] in your answer text.`;
+    // Add current user message
+    conversationContext += `User: ${userQuery}\nAssistant:`;
 
     // Call Gemini
-    const structuredResponse = await callGemini(conversationContext, geminiApiKey);
+    const assistantReply = await callGemini(conversationContext, geminiApiKey);
 
     // Generate action plans based on tool calls
     let plan: ActionPlan[] | undefined;
@@ -666,7 +708,7 @@ Provide 3-5 bullet points summarizing key takeaways. Generate 3-4 relevant follo
       
       if (name === "gmail_create_draft") {
         // Generate email content specifically for the email draft
-        const emailContent = await generateEmailContent(userQuery, structuredResponse.answer, openAiKey);
+        const emailContent = await generateEmailContent(userQuery, assistantReply, openAiKey);
         
         // Generate subject line using LLM
         const generatedSubject = await generateEmailSubject(userQuery, emailContent, openAiKey);
@@ -698,7 +740,7 @@ Provide 3-5 bullet points summarizing key takeaways. Generate 3-4 relevant follo
       try {
         await addMemory(userId, role, [
           { role: "user", content: userQuery },
-          { role: "assistant", content: structuredResponse.answer }
+          { role: "assistant", content: assistantReply }
         ], mem0ApiKey);
       } catch (error) {
         console.error("Memory storage failed:", error);
@@ -709,15 +751,15 @@ Provide 3-5 bullet points summarizing key takeaways. Generate 3-4 relevant follo
     // Build response
     const response: ResponseBody = {
       id: `msg-${Date.now()}`,
-      content: structuredResponse.answer,
-      citations: structuredResponse.citations.length > 0 ? structuredResponse.citations : (citations && citations.length > 0 ? citations : undefined),
+      content: assistantReply,
+      citations: citations && citations.length > 0 ? citations : undefined,
       plan,
       structured: {
-        answer: structuredResponse.answer,
-        bullets: structuredResponse.bullets,
-        citations: structuredResponse.citations.length > 0 ? structuredResponse.citations : (citations || []),
-        followups: structuredResponse.followups,
-        next_actions: structuredResponse.next_actions
+        answer: assistantReply,
+        bullets: [],
+        citations: citations || [],
+        followups: [],
+        next_actions: []
       },
       metadata: {
         intent: intentResult.intent,

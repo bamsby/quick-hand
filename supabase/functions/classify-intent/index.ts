@@ -5,6 +5,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Methods": "GET, POST, OPTIONS"
 };
 
 interface RequestBody {
@@ -21,6 +22,12 @@ interface IntentResponse {
       email: boolean;
     };
   };
+}
+
+interface NeedsInfoResponse {
+  needs_info: true;
+  missing: string[];
+  question: string;
 }
 
 // Helper: Call OpenAI for intent classification
@@ -140,6 +147,27 @@ serve(async (req) => {
       topic: intentResult.slots.topic,
       needs: intentResult.slots.needs,
     });
+
+    // Check if we need additional information
+    const missing = [];
+    if (intentResult.slots.needs.location) missing.push("location");
+    if (intentResult.slots.needs.email) missing.push("email");
+
+    if (missing.length > 0) {
+      const needsInfoResponse: NeedsInfoResponse = {
+        needs_info: true,
+        missing,
+        question: missing.includes("email") ? "Who should receive the email?" : "What location are you interested in?"
+      };
+      
+      return new Response(
+        JSON.stringify(needsInfoResponse),
+        {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          status: 200,
+        }
+      );
+    }
 
     return new Response(
       JSON.stringify(intentResult),

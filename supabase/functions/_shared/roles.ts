@@ -1,5 +1,8 @@
+// Role presets for Deno edge functions
+// This file mirrors lib/roles.ts but is compatible with Deno
+
 export type RoleKey = "founder" | "student" | "teacher" | "creator" | "propertyAgent" | "productManager" | "general";
-export const ROLE_ORDER: RoleKey[] = ["founder","student","teacher","creator","propertyAgent","productManager","general"];
+
 export const ROLE_PRESETS: Record<RoleKey, { 
   label: string; 
   systemPrompt: string; 

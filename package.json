@@ -10,7 +10,8 @@
     "test:memory": "playwright test tests/memory-integration.spec.ts",
     "test:memory:ui": "playwright test tests/memory-integration.spec.ts --ui",
     "test:memory:debug": "playwright test tests/memory-integration.spec.ts --debug",
-    "test:memory:headed": "playwright test tests/memory-integration.spec.ts --headed"
+    "test:memory:headed": "playwright test tests/memory-integration.spec.ts --headed",
+    "eval": "node scripts/eval.js"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.75.1",

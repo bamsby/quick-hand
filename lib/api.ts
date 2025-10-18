@@ -202,3 +202,49 @@ export async function gmailCreateDraft(to: string, subject: string, bodyHTML: st
   }
 }
 
+export async function disconnectNotion() {
+  try {
+    const { data, error } = await supabase.functions.invoke<{
+      success: boolean;
+      message: string;
+    }>("notion-disconnect");
+
+    if (error) {
+      console.error("Notion disconnect error:", error);
+      throw new Error(error.message || "Failed to disconnect Notion");
+    }
+
+    if (!data) {
+      throw new Error("No data received from server");
+    }
+
+    return { success: data.success, message: data.message };
+  } catch (error) {
+    console.error("disconnectNotion error:", error);
+    throw error;
+  }
+}
+
+export async function disconnectGmail() {
+  try {
+    const { data, error } = await supabase.functions.invoke<{
+      success: boolean;
+      message: string;
+    }>("gmail-disconnect");
+
+    if (error) {
+      console.error("Gmail disconnect error:", error);
+      throw new Error(error.message || "Failed to disconnect Gmail");
+    }
+
+    if (!data) {
+      throw new Error("No data received from server");
+    }
+
+    return { success: data.success, message: data.message };
+  } catch (error) {
+    console.error("disconnectGmail error:", error);
+    throw error;
+  }
+}
+

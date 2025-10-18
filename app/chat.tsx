@@ -3,7 +3,7 @@ import { useState, useRef, useEffect } from "react";
 import { View, Text, TextInput, Pressable, StyleSheet, ScrollView, Linking, ActivityIndicator, KeyboardAvoidingView, Platform, Alert, Image } from "react-native";
 import { useRouter } from "expo-router";
 import { ROLE_PRESETS, type RoleKey } from "../lib/roles";
-import { runAgent, notionCreatePage, gmailCreateDraft, checkNotionConnection, checkGmailConnection } from "../lib/api";
+import { runAgent, notionCreatePage, gmailCreateDraft, checkNotionConnection, checkGmailConnection, disconnectNotion, disconnectGmail } from "../lib/api";
 import type { Message, ActionPlan, IntegrationStatus } from "../lib/types";
 import { ToastProvider, useToast } from "../lib/ui/toast";
 import { NotionConfirmModal } from "../lib/ui/notion-confirm-modal";
@@ -44,6 +44,11 @@ function ChatContent() {
   const [gmailConnectModalVisible, setGmailConnectModalVisible] = useState(false);
   const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
   
+  // Disconnect confirmation states
+  const [disconnectModalVisible, setDisconnectModalVisible] = useState(false);
+  const [disconnectType, setDisconnectType] = useState<'notion' | 'gmail' | null>(null);
+  const [disconnecting, setDisconnecting] = useState(false);
+  
   // Checkpoint modal states
   const [checkpointModalVisible, setCheckpointModalVisible] = useState(false);
   const [checkpointMessageId, setCheckpointMessageId] = useState<string | null>(null);
@@ -81,19 +86,13 @@ function ChatContent() {
   }, []);
 
   const handleSignOut = async () => {
-    console.log("handleSignOut called");
-    
     // For web testing, let's skip the alert and go straight to sign out
     if (Platform.OS === 'web') {
-      console.log("Web platform detected, proceeding with sign out...");
       setSigningOut(true);
       try {
-        console.log("Starting sign out process...");
         const result = await signOut();
-        console.log("Sign out result:", result);
         
         if (result.success) {
-          console.log("Sign out successful, clearing user state...");
           setUser(null);
           setNotionConnectionStatus(null);
           setGmailConnectionStatus(null);
@@ -126,12 +125,9 @@ function ChatContent() {
             onPress: async () => {
               setSigningOut(true);
               try {
-                console.log("Starting sign out process...");
                 const result = await signOut();
-                console.log("Sign out result:", result);
                 
                 if (result.success) {
-                  console.log("Sign out successful, clearing user state...");
                   setUser(null);
                   setNotionConnectionStatus(null);
                   setGmailConnectionStatus(null);
@@ -253,6 +249,63 @@ function ChatContent() {
         "error"
       );
     }
+  };
+
+  const handleNotionDisconnect = async () => {
+    setDisconnecting(true);
+    // Immediately update UI to show disconnection
+    setNotionConnectionStatus({ connected: false });
+    setDisconnectModalVisible(false);
+    setDisconnectType(null);
+    
+    try {
+      const result = await disconnectNotion();
+      if (result.success) {
+        showToast("Notion disconnected successfully", "success");
+      } else {
+        // Revert the UI change if disconnect failed
+        setNotionConnectionStatus({ connected: true });
+        showToast("Failed to disconnect Notion", "error");
+      }
+    } catch (error) {
+      console.error("Notion disconnect error:", error);
+      // Revert the UI change if disconnect failed
+      setNotionConnectionStatus({ connected: true });
+      showToast("Failed to disconnect Notion. Please try again.", "error");
+    } finally {
+      setDisconnecting(false);
+    }
+  };
+
+  const handleGmailDisconnect = async () => {
+    setDisconnecting(true);
+    // Immediately update UI to show disconnection
+    setGmailConnectionStatus({ connected: false });
+    setDisconnectModalVisible(false);
+    setDisconnectType(null);
+    
+    try {
+      const result = await disconnectGmail();
+      if (result.success) {
+        showToast("Gmail disconnected successfully", "success");
+      } else {
+        // Revert the UI change if disconnect failed
+        setGmailConnectionStatus({ connected: true });
+        showToast("Failed to disconnect Gmail", "error");
+      }
+    } catch (error) {
+      console.error("Gmail disconnect error:", error);
+      // Revert the UI change if disconnect failed
+      setGmailConnectionStatus({ connected: true });
+      showToast("Failed to disconnect Gmail. Please try again.", "error");
+    } finally {
+      setDisconnecting(false);
+    }
+  };
+
+  const showDisconnectConfirmation = (type: 'notion' | 'gmail') => {
+    setDisconnectType(type);
+    setDisconnectModalVisible(true);
   };
 
   const confirmNotionAction = async (title: string, parentPageId?: string) => {
@@ -547,7 +600,7 @@ function ChatContent() {
             <View style={styles.headerLeft}>
               <Pressable 
                 style={styles.backButton}
-                onPress={() => router.back()}
+                onPress={() => router.push('/')}
               >
                 <Text style={styles.backButtonText}>‹</Text>
               </Pressable>
@@ -561,26 +614,52 @@ function ChatContent() {
                   <Text style={styles.userEmail}>{user.email}</Text>
                 )}
                 <View style={styles.integrationStatus}>
+                  
                   {notionConnectionStatus?.connected && (
-                    <View style={styles.statusBadge}>
-                      <Text style={styles.statusText}>✓ Notion</Text>
-                    </View>
+                    <Pressable 
+                      style={[
+                        styles.statusBadge,
+                        disconnecting && disconnectType === 'notion' && styles.statusBadgeDisconnecting
+                      ]}
+                       onPress={() => {
+                         if (disconnecting) return; // Prevent multiple clicks
+                         showDisconnectConfirmation('notion');
+                       }}
+                      disabled={disconnecting}
+                    >
+                      {disconnecting && disconnectType === 'notion' ? (
+                        <ActivityIndicator size="small" color="#FFFFFF" />
+                      ) : (
+                        <Text style={styles.statusText}>✓ Notion</Text>
+                      )}
+                    </Pressable>
                   )}
                   {gmailConnectionStatus?.connected && (
-                    <View style={styles.statusBadge}>
-                      <Text style={styles.statusText}>✓ Gmail</Text>
-                    </View>
+                    <Pressable 
+                      style={[
+                        styles.statusBadge,
+                        disconnecting && disconnectType === 'gmail' && styles.statusBadgeDisconnecting
+                      ]}
+                       onPress={() => {
+                         if (disconnecting) return; // Prevent multiple clicks
+                         showDisconnectConfirmation('gmail');
+                       }}
+                      disabled={disconnecting}
+                    >
+                      {disconnecting && disconnectType === 'gmail' ? (
+                        <ActivityIndicator size="small" color="#FFFFFF" />
+                      ) : (
+                        <Text style={styles.statusText}>✓ Gmail</Text>
+                      )}
+                    </Pressable>
                   )}
                 </View>
               </View>
-              <Pressable 
-                style={[styles.signOutIconButton, signingOut && styles.signOutButtonDisabled]}
-                onPress={() => {
-                  console.log("Sign out button pressed!");
-                  handleSignOut();
-                }}
-                disabled={signingOut}
-              >
+               <Pressable 
+                 style={[styles.signOutIconButton, signingOut && styles.signOutButtonDisabled]}
+                 onPress={handleSignOut}
+                 disabled={signingOut}
+               >
                 {signingOut ? (
                   <ActivityIndicator size="small" color="#ef4444" />
                 ) : (
@@ -602,6 +681,13 @@ function ChatContent() {
               <View style={[styles.bubble, m.role==="user"?styles.user:styles.assistant]}>
                 <Text style={m.role==="user"?styles.userText:styles.assistantText}>{m.content}</Text>
               </View>
+              
+              {/* Show structured answer if available and different from main content */}
+              {m.structured?.answer && m.structured.answer !== m.content && (
+                <View style={styles.structuredAnswer}>
+                  <Text style={styles.structuredAnswerText}>{m.structured.answer}</Text>
+                </View>
+              )}
               {/* Structured content - bullets */}
               {m.structured?.bullets && m.structured.bullets.length > 0 && (
                 <View style={styles.bullets}>
@@ -726,7 +812,7 @@ function ChatContent() {
             editable={!loading}
             multiline
             textAlignVertical="top"
-            maxLength={1000}
+            maxLength={5000}
           />
           <Pressable onPress={onSend} style={[styles.send, loading && styles.sendDisabled]} disabled={loading}>
             <Text style={{ color:"white" }}>Send</Text>
@@ -786,6 +872,44 @@ function ChatContent() {
               : []
           }
         />
+
+        {/* Disconnect Confirmation Modal */}
+        {disconnectModalVisible && (
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalContent}>
+              <Text style={styles.modalTitle}>
+                Disconnect {disconnectType === 'notion' ? 'Notion' : 'Gmail'}?
+              </Text>
+              <Text style={styles.modalMessage}>
+                Are you sure you want to disconnect {disconnectType === 'notion' ? 'Notion' : 'Gmail'}? 
+                You'll need to reconnect to use {disconnectType === 'notion' ? 'Notion' : 'Gmail'} features.
+              </Text>
+              <View style={styles.modalButtons}>
+                <Pressable
+                  style={[styles.modalButton, styles.modalButtonCancel]}
+                  onPress={() => {
+                    setDisconnectModalVisible(false);
+                    setDisconnectType(null);
+                  }}
+                >
+                  <Text style={styles.modalButtonCancelText}>Cancel</Text>
+                </Pressable>
+                <Pressable
+                  style={[styles.modalButton, styles.modalButtonConfirm]}
+                  onPress={() => {
+                    if (disconnectType === 'notion') {
+                      handleNotionDisconnect();
+                    } else if (disconnectType === 'gmail') {
+                      handleGmailDisconnect();
+                    }
+                  }}
+                >
+                  <Text style={styles.modalButtonConfirmText}>Disconnect</Text>
+                </Pressable>
+              </View>
+            </View>
+          </View>
+        )}
       </View>
     </KeyboardAvoidingView>
   );
@@ -925,6 +1049,23 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     borderWidth: 1,
     borderColor: "rgba(255,255,255,0.3)",
+    minHeight: 24,
+    minWidth: 60,
+    ...Platform.select({
+      ios: {
+        shadowColor: "#000000",
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.1,
+        shadowRadius: 2,
+      },
+      android: {
+        elevation: 1,
+      },
+    }),
+  },
+  statusBadgeDisconnecting: {
+    backgroundColor: "rgba(255,255,255,0.1)",
+    opacity: 0.7,
   },
   statusText: {
     color: "#FFFFFF",
@@ -1314,6 +1455,105 @@ const styles = StyleSheet.create({
   sendDisabled: { 
     opacity: 0.5,
     backgroundColor: "#94A3B8",
+  },
+  modalOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 1000,
+  },
+  modalContent: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 24,
+    margin: 20,
+    maxWidth: 400,
+    width: '90%',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.3,
+        shadowRadius: 8,
+      },
+      android: {
+        elevation: 8,
+      },
+    }),
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#1E293B',
+    marginBottom: 12,
+    textAlign: 'center',
+  },
+  modalMessage: {
+    fontSize: 16,
+    color: '#64748B',
+    lineHeight: 22,
+    marginBottom: 24,
+    textAlign: 'center',
+  },
+  modalButtons: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  modalButton: {
+    flex: 1,
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalButtonCancel: {
+    backgroundColor: '#F1F5F9',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  modalButtonConfirm: {
+    backgroundColor: '#EF4444',
+  },
+  modalButtonCancelText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#64748B',
+  },
+  modalButtonConfirmText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#FFFFFF',
+  },
+  structuredAnswer: {
+    marginTop: 12,
+    marginBottom: 16,
+    padding: 16,
+    backgroundColor: "#FEF3C7",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#F59E0B",
+    ...Platform.select({
+      ios: {
+        shadowColor: "#F59E0B",
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.1,
+        shadowRadius: 4,
+      },
+      android: {
+        elevation: 2,
+      },
+    }),
+  },
+  structuredAnswerText: {
+    fontSize: 14,
+    color: "#1E293B",
+    lineHeight: 20,
   },
 });
 
