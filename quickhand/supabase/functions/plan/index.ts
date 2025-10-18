@@ -181,21 +181,45 @@ serve(async (req) => {
     const lowerReply = assistantReply.toLowerCase();
     const lowerQuery = userQuery.toLowerCase();
 
-    // Simple heuristics for action suggestions
+    // Enhanced heuristics for action suggestions - can detect MULTIPLE actions
+    const actions: ActionPlan[] = [];
+    
+    // Check for Notion action
     if (lowerQuery.includes("save") || lowerQuery.includes("notion")) {
-      plan = [{
-        id: `action-${Date.now()}`,
+      // Generate a cleaner title from the query
+      const cleanTitle = userQuery
+        .replace(/save|notion|into|to|and|the|my/gi, "")
+        .trim()
+        .substring(0, 80) || "Note";
+      
+      actions.push({
+        id: `action-notion-${Date.now()}`,
         action: "notion",
         label: "Save to Notion",
-        params: { title: userQuery, content: assistantReply },
-      }];
-    } else if (lowerQuery.includes("email") || lowerQuery.includes("draft") || lowerQuery.includes("gmail")) {
-      plan = [{
-        id: `action-${Date.now()}`,
+        params: { 
+          title: cleanTitle, 
+          content: assistantReply 
+        },
+      });
+    }
+    
+    // Check for Gmail action (independent check, not else-if)
+    if (lowerQuery.includes("email") || lowerQuery.includes("draft") || lowerQuery.includes("gmail") || lowerQuery.includes("send")) {
+      actions.push({
+        id: `action-gmail-${Date.now()}`,
         action: "gmail",
-        label: "Create Gmail Draft",
-        params: { subject: userQuery, body: assistantReply },
-      }];
+        label: "Draft Email",
+        params: { 
+          to: "", // User will fill this in the checkpoint modal
+          subject: `Re: ${userQuery.substring(0, 50)}`,
+          body: assistantReply 
+        },
+      });
+    }
+    
+    // Only assign plan if we have actions
+    if (actions.length > 0) {
+      plan = actions;
     }
 
     // Build response

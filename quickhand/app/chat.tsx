@@ -7,6 +7,7 @@ import type { Message, ActionPlan } from "../lib/types";
 import { ToastProvider, useToast } from "../lib/ui/toast";
 import { NotionConfirmModal } from "../lib/ui/notion-confirm-modal";
 import { GmailConfirmModal } from "../lib/ui/gmail-confirm-modal";
+import { CheckpointModal } from "../lib/ui/checkpoint-modal";
 
 interface PendingAction {
   messageId: string;
@@ -29,6 +30,11 @@ function ChatContent() {
   const [notionModalVisible, setNotionModalVisible] = useState(false);
   const [gmailModalVisible, setGmailModalVisible] = useState(false);
   const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
+  
+  // Checkpoint modal states
+  const [checkpointModalVisible, setCheckpointModalVisible] = useState(false);
+  const [checkpointMessageId, setCheckpointMessageId] = useState<string | null>(null);
+  const [actionsUnlocked, setActionsUnlocked] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     scrollRef.current?.scrollToEnd({ animated: true });
@@ -199,6 +205,122 @@ function ChatContent() {
     }
   };
 
+  const openCheckpointModal = (messageId: string) => {
+    setCheckpointMessageId(messageId);
+    setCheckpointModalVisible(true);
+  };
+
+  const closeCheckpointModal = () => {
+    setCheckpointModalVisible(false);
+    if (checkpointMessageId) {
+      // Unlock actions so individual buttons appear
+      setActionsUnlocked(prev => new Set(prev).add(checkpointMessageId));
+      setCheckpointMessageId(null);
+    }
+  };
+
+  const executeAllActions = async (editedActions: ActionPlan[]) => {
+    if (!checkpointMessageId) return;
+    
+    setCheckpointModalVisible(false);
+    const messageId = checkpointMessageId;
+    setCheckpointMessageId(null);
+
+    // Unlock actions so buttons appear
+    setActionsUnlocked(prev => new Set(prev).add(messageId));
+
+    const message = messages.find((m) => m.id === messageId);
+    if (!message || !message.plan) return;
+
+    // Use edited actions from the modal
+    const pendingActions = editedActions.filter((a) => a.status === "pending");
+    let successCount = 0;
+    let errorCount = 0;
+
+    for (const action of pendingActions) {
+      // Update status to running
+      setMessages((msgs) =>
+        msgs.map((msg) => {
+          if (msg.id === messageId && msg.plan) {
+            return {
+              ...msg,
+              plan: msg.plan.map((p) =>
+                p.id === action.id ? { ...p, status: "running" as const } : p
+              ),
+            };
+          }
+          return msg;
+        })
+      );
+
+      try {
+        let result: string | undefined;
+
+        // Use the edited parameters from the checkpoint modal
+        if (action.action === "notion") {
+          const { pageUrl } = await notionCreatePage(
+            action.params?.title || "Untitled",
+            action.params?.content || ""
+          );
+          result = pageUrl;
+        } else if (action.action === "gmail") {
+          const { threadUrl } = await gmailCreateDraft(
+            action.params?.to || "your.email@example.com",
+            action.params?.subject || "",
+            action.params?.body || ""
+          );
+          result = threadUrl;
+        }
+
+        // Update status to done
+        setMessages((msgs) =>
+          msgs.map((msg) => {
+            if (msg.id === messageId && msg.plan) {
+              return {
+                ...msg,
+                plan: msg.plan.map((p) =>
+                  p.id === action.id ? { ...p, status: "done" as const, result } : p
+                ),
+              };
+            }
+            return msg;
+          })
+        );
+
+        successCount++;
+      } catch (error) {
+        console.error(`Action ${action.id} error:`, error);
+
+        // Update status to error
+        setMessages((msgs) =>
+          msgs.map((msg) => {
+            if (msg.id === messageId && msg.plan) {
+              return {
+                ...msg,
+                plan: msg.plan.map((p) =>
+                  p.id === action.id ? { ...p, status: "error" as const } : p
+                ),
+              };
+            }
+            return msg;
+          })
+        );
+
+        errorCount++;
+      }
+    }
+
+    // Show summary toast
+    if (errorCount === 0) {
+      showToast(`${successCount} action${successCount !== 1 ? 's' : ''} completed!`, "success");
+    } else {
+      showToast(
+        `${successCount} completed, ${errorCount} failed. Tap actions to retry.`,
+        "error"
+      );
+    }
+  };
+
   return (
     <KeyboardAvoidingView 
       style={{ flex: 1 }} 
@@ -242,36 +364,55 @@ function ChatContent() {
               {m.plan && m.plan.length > 0 && (
                 <View style={styles.actionsCard}>
                   <Text style={styles.actionsTitle}>Proposed Actions:</Text>
-                  {m.plan.map((action) => (
-                    <View key={action.id} style={styles.actionRow}>
-                      <Pressable
-                        style={[
-                          styles.actionButton,
-                          action.status === "done" && styles.actionDone,
-                          action.status === "error" && styles.actionError,
-                        ]}
-                        onPress={() => executeAction(m.id, action.id)}
-                        disabled={action.status === "running" || action.status === "done"}
-                      >
-                        {action.status === "running" ? (
-                          <ActivityIndicator size="small" color="#fff" />
-                        ) : (
-                          <Text style={styles.actionButtonText}>
-                            {action.status === "done" ? "✓ " : ""}
-                            {action.label}
-                          </Text>
-                        )}
-                      </Pressable>
-                      {action.status === "done" && action.result && (
-                        <Pressable onPress={() => Linking.openURL(action.result!)}>
-                          <Text style={styles.resultLink}>Open →</Text>
+                  {(() => {
+                    const allPending = m.plan!.every((a) => a.status === "pending");
+                    const shouldShowCheckpoint = 
+                      m.plan!.length >= 2 && 
+                      allPending && 
+                      !actionsUnlocked.has(m.id);
+
+                    if (shouldShowCheckpoint) {
+                      return (
+                        <Pressable
+                          style={styles.reviewPlanButton}
+                          onPress={() => openCheckpointModal(m.id)}
+                        >
+                          <Text style={styles.reviewPlanButtonText}>Review Plan</Text>
                         </Pressable>
-                      )}
-                      {action.status === "error" && (
-                        <Text style={styles.errorText}>Failed</Text>
-                      )}
-                    </View>
-                  ))}
+                      );
+                    }
+
+                    return m.plan!.map((action) => (
+                      <View key={action.id} style={styles.actionRow}>
+                        <Pressable
+                          style={[
+                            styles.actionButton,
+                            action.status === "done" && styles.actionDone,
+                            action.status === "error" && styles.actionError,
+                          ]}
+                          onPress={() => executeAction(m.id, action.id)}
+                          disabled={action.status === "running" || action.status === "done"}
+                        >
+                          {action.status === "running" ? (
+                            <ActivityIndicator size="small" color="#fff" />
+                          ) : (
+                            <Text style={styles.actionButtonText}>
+                              {action.status === "done" ? "✓ " : ""}
+                              {action.label}
+                            </Text>
+                          )}
+                        </Pressable>
+                        {action.status === "done" && action.result && (
+                          <Pressable onPress={() => Linking.openURL(action.result!)}>
+                            <Text style={styles.resultLink}>Open →</Text>
+                          </Pressable>
+                        )}
+                        {action.status === "error" && (
+                          <Text style={styles.errorText}>Failed</Text>
+                        )}
+                      </View>
+                    ));
+                  })()}
                 </View>
               )}
             </View>
@@ -320,6 +461,17 @@ function ChatContent() {
           onConfirm={confirmGmailAction}
           initialRecipients={pendingAction?.action.params?.to || "your.email@example.com"}
           subject={pendingAction?.action.params?.subject || ""}
+        />
+
+        <CheckpointModal
+          visible={checkpointModalVisible}
+          onClose={closeCheckpointModal}
+          onRunAll={executeAllActions}
+          actions={
+            checkpointMessageId
+              ? messages.find((m) => m.id === checkpointMessageId)?.plan || []
+              : []
+          }
         />
       </View>
     </KeyboardAvoidingView>
@@ -432,6 +584,19 @@ const styles = StyleSheet.create({
     marginLeft: 8,
     color: "#ef4444",
     fontSize: 12,
+  },
+  reviewPlanButton: {
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    backgroundColor: "#16E0B4",
+    borderRadius: 8,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  reviewPlanButtonText: {
+    color: "#fff",
+    fontSize: 15,
+    fontWeight: "600",
   },
   loadingBubble: {
     flexDirection: "row",
