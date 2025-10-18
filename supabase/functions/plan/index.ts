@@ -723,6 +723,16 @@ serve(async (req) => {
     if (systemMessage) {
       conversationContext += systemMessage.content;
       
+      // Add today's date to the system prompt
+      const today = new Date();
+      const dateString = today.toLocaleDateString('en-US', {
+        weekday: 'long',
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric'
+      });
+      conversationContext += `\n\nToday's date is ${dateString}. Use this information to provide contextually appropriate responses when the user asks about dates, schedules, or time-sensitive information.`;
+      
       // Add few-shot examples based on role
       const rolePreset = ROLE_PRESETS[role as RoleKey];
       if (rolePreset && rolePreset.fewShots) {
