@@ -165,7 +165,8 @@ See [SETUP_GUIDE.md](./docs/setup/SETUP_GUIDE.md) for complete setup instruction
 - **State:** @tanstack/react-query v5
 - **Validation:** Zod v3
 - **Backend:** Supabase Edge Functions (Deno runtime)
-- **AI:** OpenAI GPT-4o-mini
+- **AI:** OpenAI GPT-4o-mini, Google Gemini 2.5 Pro
+- **Memory:** mem0.ai (persistent user memory and context)
 - **Search:** Exa API (web search with citations)
 - **Database:** Supabase PostgreSQL (future: message history)
 - **Language:** TypeScript 5.9
